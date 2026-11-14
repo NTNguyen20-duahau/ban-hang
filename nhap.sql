@@ -18,16 +18,16 @@ begin
     on conflict (muc) do nothing;
 
   insert into bh.nhan_vien (id, ten_dang_nhap, ho_ten, salt, hash, la_chu, quyen, bi_khoa)
-    select bh.so(x->'id'), x->>'tenDangNhap', coalesce(x->>'hoTen', ''), x->>'salt', x->>'hash', bh.dung(x->'laChu'),
-      coalesce((select array_agg(q) from unnest(string_to_array(coalesce(x->>'quyen', ''), ',')) q where q <> ''), '{}'), bh.dung(x->'biKhoa')
+    select bh.so(x->'id'), x->>'tenDangNhap', coalesce(x->>'hoTen', ''), x->>'salt', x->>'hash', (bh.so(x->'laChu') <> 0),
+      coalesce((select array_agg(q) from unnest(string_to_array(coalesce(x->>'quyen', ''), ',')) q where q <> ''), '{}'), (bh.so(x->'biKhoa') <> 0)
     from jsonb_array_elements(ds->'NhanVien') x where bh.so(x->'id') > 0;
 
   insert into bh.hang_hoa (id, ten, don_vi, gia_ban, gia_nhap, ton, ton_toi_thieu, ngung)
-    select bh.so(x->'id'), x->>'ten', coalesce(x->>'donVi', ''), bh.so(x->'giaBan'), bh.so(x->'giaNhap'), bh.so(x->'ton'), bh.so(x->'tonToiThieu'), bh.dung(x->'ngung')
+    select bh.so(x->'id'), x->>'ten', coalesce(x->>'donVi', ''), bh.so(x->'giaBan'), bh.so(x->'giaNhap'), bh.so(x->'ton'), bh.so(x->'tonToiThieu'), (bh.so(x->'ngung') <> 0)
     from jsonb_array_elements(ds->'HangHoa') x where bh.so(x->'id') > 0;
 
   insert into bh.khach_hang (id, ten, sdt, dia_chi, han_muc, no, ngung)
-    select bh.so(x->'id'), coalesce(x->>'ten', ''), coalesce(x->>'sdt', ''), coalesce(x->>'diaChi', ''), bh.so(x->'hanMuc'), bh.so(x->'no'), bh.dung(x->'ngung')
+    select bh.so(x->'id'), coalesce(x->>'ten', ''), coalesce(x->>'sdt', ''), coalesce(x->>'diaChi', ''), bh.so(x->'hanMuc'), bh.so(x->'no'), (bh.so(x->'ngung') <> 0)
     from jsonb_array_elements(ds->'KhachHang') x where bh.so(x->'id') > 0;
 
   insert into bh.hoa_don (id, loai, thoi_gian, kh_id, kh_ten, kh_sdt, kh_dia_chi, tong, giam_gia, no_cu, thanh_toan, con_no, nhan_vien, trang_thai, ghi_chu, chi_tiet, items)
@@ -44,7 +44,7 @@ begin
 
   insert into bh.doi_tac (id, ten, sdt, dia_chi, no, no_ke_toan, ngung)
     select bh.so(x->'id'), x->>'ten', coalesce(x->>'sdt', ''), coalesce(x->>'diaChi', ''), bh.so(x->'no'),
-      case when coalesce(x->>'noKeToan', '') = '' then null else bh.so(x->'noKeToan') end, bh.dung(x->'ngung')
+      case when coalesce(x->>'noKeToan', '') = '' then null else bh.so(x->'noKeToan') end, (bh.so(x->'ngung') <> 0)
     from jsonb_array_elements(ds->'DoiTac') x where bh.so(x->'id') > 0;
   insert into bh.doi_tac (id, ten) select 1, 'TKA' where not exists (select 1 from bh.doi_tac);
 
