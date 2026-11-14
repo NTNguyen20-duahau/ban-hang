@@ -45,6 +45,11 @@ create table if not exists bh.kiem_kho (
   ton_so bigint not null default 0, ton_thuc bigint not null default 0, chenh_lech bigint not null default 0, nhan_vien text not null default '');
 create table if not exists bh.nhat_ky (id bigserial primary key, thoi_gian bigint not null, nhan_vien text not null default '', hanh_dong text not null default '', chi_tiet text not null default '');
 create table if not exists bh.ma_da_lam (ma text primary key, kq jsonb not null, luc bigint not null);
+-- số liệu từ phần mềm cũ (trước khi dùng web), theo tháng
+create table if not exists bh.slc_hang (
+  id bigserial primary key, thang text not null, tu bigint not null, den bigint not null, hh_id int not null default 0,
+  ten_goc text not null default '', sl numeric not null default 0, von bigint not null default 0, doanh_thu bigint not null default 0);
+create index if not exists slc_hang_thang on bh.slc_hang (thang);
 
 create index if not exists hoa_don_kh on bh.hoa_don (kh_id);
 create index if not exists hoa_don_tg on bh.hoa_don (thoi_gian);
@@ -56,7 +61,7 @@ create index if not exists tra_dt on bh.tra_doi_tac (dt_id);
 create index if not exists nhat_ky_tg on bh.nhat_ky (thoi_gian);
 
 do $$ declare t text; begin
-  foreach t in array array['cai_dat','nhan_vien','phien','sai_dn','hang_hoa','khach_hang','hoa_don','thu_no','doi_tac','phieu_nhap','tra_doi_tac','kiem_kho','nhat_ky','ma_da_lam'] loop
+  foreach t in array array['cai_dat','nhan_vien','phien','sai_dn','hang_hoa','khach_hang','hoa_don','thu_no','doi_tac','phieu_nhap','tra_doi_tac','kiem_kho','nhat_ky','ma_da_lam','slc_hang'] loop
     execute format('alter table bh.%I enable row level security', t);
   end loop;
 end $$;
@@ -702,8 +707,26 @@ begin
     'thieuGiaVon', (select count(*) from it where not bh.dung(x->'von')),
     'top', coalesce((select jsonb_agg(jsonb_build_object('ten', ten, 'sl', sl, 'tien', tien) order by tien desc) from (select * from th order by tien desc limit 15) a), '[]'::jsonb))
   into kq;
-  if not bh.co(u, 'xemGiaNhap') then kq := kq - 'loiNhuan' - 'thieuGiaVon'; end if;
+  kq := kq || jsonb_build_object('cu', (select jsonb_build_object('thang', jsonb_agg(distinct thang), 'doanhThu', sum(doanh_thu), 'loiNhuan', sum(doanh_thu - von))
+    from bh.slc_hang where (not bh.dung(d->'tu') or den >= bh.so(d->'tu')) and (not bh.dung(d->'den') or tu <= bh.so(d->'den')) having count(*) > 0));
+  if not bh.co(u, 'xemGiaNhap') then kq := kq - 'loiNhuan' - 'thieuGiaVon'; if jsonb_typeof(kq->'cu') = 'object' then kq := jsonb_set(kq, '{cu}', (kq->'cu') - 'loiNhuan'); end if; end if;
   return kq;
+end $$;
+
+/* ---------- Số liệu cũ ---------- */
+create or replace function bh.v_so_lieu_cu(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql stable as $$
+declare xem boolean; th text;
+begin
+  perform bh.can(u, 'xemBaoCao');
+  xem := bh.co(u, 'xemGiaNhap');
+  th := coalesce(nullif(d->>'thang', ''), (select max(thang) from bh.slc_hang));
+  return jsonb_build_object(
+    'thangDS', coalesce((select jsonb_agg(jsonb_build_object('thang', thang, 'tu', tu, 'den', den) order by thang desc)
+      from (select thang, min(tu) tu, max(den) den from bh.slc_hang group by thang) a), '[]'::jsonb),
+    'thang', th,
+    'ds', coalesce((select jsonb_agg(jsonb_build_object('ten', coalesce(h.ten, r.ten_goc), 'tenGoc', r.ten_goc, 'hhId', r.hh_id, 'sl', r.sl, 'doanhThu', r.doanh_thu)
+        || case when xem then jsonb_build_object('von', r.von, 'lai', r.doanh_thu - r.von) else '{}'::jsonb end order by r.doanh_thu desc)
+      from bh.slc_hang r left join bh.hang_hoa h on h.id = r.hh_id where r.thang = th), '[]'::jsonb));
 end $$;
 
 /* ---------- Nhân viên / cài đặt ---------- */
@@ -783,8 +806,8 @@ declare u bh.nhan_vien; ham text; kq jsonb; ma_ text; chi_doc boolean;
     "dsHoaDon":"v_ds_hoa_don","luuNhap":"v_luu_nhap","huyNhap":"v_huy_nhap","dsNhap":"v_ds_nhap","dsDoiTac":"v_ds_doi_tac",
     "xemDoiTac":"v_xem_doi_tac","luuDoiTac":"v_luu_doi_tac","traDoiTac":"v_tra_doi_tac","huyTraDoiTac":"v_huy_tra_doi_tac",
     "datDoiTac":"v_dat_doi_tac","doanhSoKhach":"v_doanh_so_khach","kiemKho":"v_kiem_kho","baoCao":"v_bao_cao","dsNV":"v_ds_nv",
-    "luuNV":"v_luu_nv","doiMatKhau":"v_doi_mat_khau","luuCaiDat":"v_luu_cai_dat","nhatKy":"v_nhat_ky"}';
-  ds_chi_doc constant text[] := array['khoiDong','chiTietKhach','dsHoaDon','dsNhap','dsDoiTac','xemDoiTac','doanhSoKhach','baoCao','dsNV','nhatKy'];
+    "luuNV":"v_luu_nv","soLieuCu":"v_so_lieu_cu","doiMatKhau":"v_doi_mat_khau","luuCaiDat":"v_luu_cai_dat","nhatKy":"v_nhat_ky"}';
+  ds_chi_doc constant text[] := array['khoiDong','chiTietKhach','dsHoaDon','dsNhap','dsDoiTac','xemDoiTac','doanhSoKhach','baoCao','dsNV','nhatKy','soLieuCu'];
   ds_ma constant text[] := array['luuBan','thuNo','luuNhap','traDoiTac'];
 begin
   d := coalesce(d, '{}');
