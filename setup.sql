@@ -110,8 +110,20 @@ create or replace function bh.dung(x jsonb) returns boolean language sql immutab
 create or replace function bh.co_gt(x jsonb) returns boolean language sql immutable as
 $$ select x is not null and jsonb_typeof(x) <> 'null' $$;
 
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
+-- cách cũ (SHA-256), chỉ còn dùng để kiểm tra mật khẩu tạo từ bản Google
 create or replace function bh.bam(salt text, mk text) returns text language sql immutable as
 $$ select encode(sha256(convert_to(salt || '|' || mk, 'UTF8')), 'hex') $$;
+
+-- mật khẩu mới: bcrypt (mã hoá chậm, khó dò)
+create or replace function bh.tao_hash(mk text) returns text language sql volatile as
+$$ select extensions.crypt(mk, extensions.gen_salt('bf', 10)) $$;
+
+create or replace function bh.dung_mk(r bh.nhan_vien, mk text) returns boolean language sql stable as $$
+  select case when r.hash like '$2%' then r.hash = extensions.crypt(coalesce(mk, ''), r.hash)
+    else r.hash = bh.bam(r.salt, coalesce(mk, '')) end $$;
 
 create or replace function bh.quyen_ds() returns jsonb language sql immutable as $$ select jsonb_build_object(
   'xemGiaNhap','Xem giá nhập, lợi nhuận', 'xemBaoCao','Xem báo cáo doanh thu', 'suaGia','Sửa giá bán',
@@ -219,7 +231,7 @@ declare r bh.nhan_vien; s text := gen_random_uuid()::text;
 begin
   if exists (select 1 from bh.nhan_vien) then perform bh.loi('Cửa hàng đã có tài khoản chủ.'); end if;
   insert into bh.nhan_vien (ten_dang_nhap, ho_ten, salt, hash, la_chu)
-    values (bh.ten_dn(d->>'tenDangNhap'), coalesce(nullif(bh.chu(d->>'hoTen'), ''), 'Chủ cửa hàng'), s, bh.bam(s, bh.kt_mk(d->>'matKhau')), true)
+    values (bh.ten_dn(d->>'tenDangNhap'), coalesce(nullif(bh.chu(d->>'hoTen'), ''), 'Chủ cửa hàng'), s, bh.tao_hash(bh.kt_mk(d->>'matKhau')), true)
     returning * into r;
   perform bh.nhat_ky_(r, 'Tạo tài khoản chủ', r.ten_dang_nhap);
   return jsonb_build_object('tk', bh.tao_phien(r));
@@ -233,13 +245,14 @@ begin
   select so into sai from bh.sai_dn where sai_dn.ten = ten_;
   if coalesce(sai, 0) >= 5 then return jsonb_build_object('ok', false, 'error', 'Nhập sai quá nhiều lần. Vui lòng thử lại sau 10 phút.'); end if;
   select * into r from bh.nhan_vien where ten_dang_nhap = ten_;
-  if not found or r.hash <> bh.bam(r.salt, coalesce(d->>'matKhau', '')) then
+  if not found or not bh.dung_mk(r, d->>'matKhau') then
     insert into bh.sai_dn (ten, so, het) values (ten_, 1, bh.bay_gio() + 600000)
       on conflict (ten) do update set so = bh.sai_dn.so + 1, het = excluded.het;
     return jsonb_build_object('ok', false, 'error', 'Sai tên đăng nhập hoặc mật khẩu.');
   end if;
   if r.bi_khoa then return jsonb_build_object('ok', false, 'error', 'Tài khoản này đang bị khoá.'); end if;
   delete from bh.sai_dn where sai_dn.ten = ten_;
+  if r.hash not like '$2%' then update bh.nhan_vien set hash = bh.tao_hash(d->>'matKhau') where id = r.id returning * into r; end if;
   return jsonb_build_object('ok', true, 'data', jsonb_build_object('tk', bh.tao_phien(r)));
 end $$;
 
@@ -715,7 +728,7 @@ begin
       bi_khoa = case when x.la_chu then x.bi_khoa else khoa end where x.id = r.id returning * into r;
     if bh.dung(d->'matKhau') then
       s := gen_random_uuid()::text;
-      update bh.nhan_vien set salt = s, hash = bh.bam(s, bh.kt_mk(d->>'matKhau')) where id = r.id returning * into r;
+      update bh.nhan_vien set salt = s, hash = bh.tao_hash(bh.kt_mk(d->>'matKhau')) where id = r.id returning * into r;
     end if;
     perform bh.nhat_ky_(u, 'Sửa nhân viên', r.ten_dang_nhap || case when bh.dung(d->'matKhau') then ' (đặt lại mật khẩu)' else '' end ||
       case when khoa then ' (khoá)' else '' end || ' | quyền: ' || case when r.la_chu then 'chủ' else array_to_string(quyen_, ',') end);
@@ -726,7 +739,7 @@ begin
   ten := bh.ten_dn(d->>'tenDangNhap');
   if exists (select 1 from bh.nhan_vien where ten_dang_nhap = ten) then perform bh.loi('Tên đăng nhập "' || ten || '" đã có người dùng.'); end if;
   s := gen_random_uuid()::text;
-  insert into bh.nhan_vien (ten_dang_nhap, ho_ten, salt, hash, la_chu, quyen) values (ten, ho_ten_, s, bh.bam(s, bh.kt_mk(d->>'matKhau')), false, quyen_);
+  insert into bh.nhan_vien (ten_dang_nhap, ho_ten, salt, hash, la_chu, quyen) values (ten, ho_ten_, s, bh.tao_hash(bh.kt_mk(d->>'matKhau')), false, quyen_);
   perform bh.nhat_ky_(u, 'Thêm nhân viên', ten || ' | quyền: ' || array_to_string(quyen_, ','));
   return jsonb_build_object('ds', coalesce((select jsonb_agg(bh.nv_cong(x) order by x.id) from bh.nhan_vien x), '[]'::jsonb));
 end $$;
@@ -735,8 +748,8 @@ create or replace function bh.v_doi_mat_khau(u bh.nhan_vien, d jsonb) returns js
 declare r bh.nhan_vien; s text := gen_random_uuid()::text;
 begin
   select * into r from bh.nhan_vien where id = u.id;
-  if r.hash <> bh.bam(r.salt, coalesce(d->>'cu', '')) then perform bh.loi('Mật khẩu hiện tại không đúng.'); end if;
-  update bh.nhan_vien set salt = s, hash = bh.bam(s, bh.kt_mk(d->>'moi')) where id = r.id returning * into r;
+  if not bh.dung_mk(r, d->>'cu') then perform bh.loi('Mật khẩu hiện tại không đúng.'); end if;
+  update bh.nhan_vien set salt = s, hash = bh.tao_hash(bh.kt_mk(d->>'moi')) where id = r.id returning * into r;
   perform bh.nhat_ky_(u, 'Đổi mật khẩu', r.ten_dang_nhap);
   return jsonb_build_object('tk', bh.tao_phien(r));
 end $$;
@@ -763,7 +776,7 @@ end $$;
 /* ====================== CỬA NGÕ GỌI TỪ TRANG WEB ====================== */
 
 create or replace function public.api(tk text, viec text, d jsonb default '{}') returns jsonb
-language plpgsql security definer set search_path = bh, pg_catalog, public as $$
+language plpgsql security definer set search_path = bh, pg_catalog, public, extensions as $$
 declare u bh.nhan_vien; ham text; kq jsonb; ma_ text; chi_doc boolean;
   ds_viec constant jsonb := '{"khoiDong":"v_khoi_dong","luuHang":"v_luu_hang","luuKhach":"v_luu_khach","dieuChinhNo":"v_dieu_chinh_no",
     "chiTietKhach":"v_chi_tiet_khach","luuBan":"v_luu_ban","huyHoaDon":"v_huy_hoa_don","thuNo":"v_thu_no","huyThuNo":"v_huy_thu_no",
