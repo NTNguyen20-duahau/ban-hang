@@ -150,7 +150,13 @@ table.bang th{font-size:12px;color:var(--mo);font-weight:600}
 .phieu .tg td:last-child{text-align:right}
 .phieu .cuoi{border-top:1px dotted #000;margin-top:3mm;padding-top:2mm;text-align:center}
 .xemPhieu{background:#e9e7df;border-radius:10px;padding:10px;overflow:auto}
-.xemPhieu .phieu{box-shadow:0 1px 4px rgba(0,0,0,.2);padding:4mm 3mm}
+.xemPhieu .phieu{box-shadow:0 1px 4px rgba(0,0,0,.2);padding:4mm 3mm;width:100%;max-width:440px;font-size:16px}
+.xemPhieu .phieu .n{font-size:14px}.xemPhieu .phieu .td{font-size:21px}.xemPhieu .phieu .hang th{font-size:14px}.xemPhieu .phieu .tg td{font-size:17px}
+.xemPhieu .phieu .kh td:first-child{width:76px}
+#vungAnh{position:fixed;left:-10000px;top:0;width:420px;background:#fff}
+#vungAnh .phieu{width:420px;max-width:none;font-size:18px;padding:18px 16px 22px}
+#vungAnh .phieu .n{font-size:15px}#vungAnh .phieu .td{font-size:24px}#vungAnh .phieu .hang th{font-size:15px}#vungAnh .phieu .tg td{font-size:19px}
+#vungAnh .phieu .kh td:first-child{width:84px}
 #vungIn{display:none}
 @page{margin:0}
 @media print{
@@ -546,8 +552,43 @@ function phieuHTML(p) {
 }
 function xemPhieu(p, inLuon, them) {
   S.tam.phieu = p;
-  moHop(p.tieuDe.charAt(0) + p.tieuDe.slice(1).toLowerCase(), '<div class="xemPhieu">' + phieuHTML(p) + '</div>', '<div class="hangNut">' + (them || '') + '<button class="nut" onclick="dongHop()">Đóng</button><button class="nut chinh" onclick="inPhieu()">In phiếu</button></div>');
+  moHop(p.tieuDe.charAt(0) + p.tieuDe.slice(1).toLowerCase(), '<div class="xemPhieu">' + phieuHTML(p) + '</div>', '<div class="hangNut">' + (them || '') + '<button class="nut" onclick="dongHop()">Đóng</button><button class="nut" onclick="anhPhieu()">📷 Lưu ảnh / Gửi</button><button class="nut chinh" onclick="inPhieu()">In phiếu</button></div>');
   if (inLuon) inPhieu();
+}
+var _h2c = null;
+function taiH2C() {
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  if (_h2c) return _h2c;
+  _h2c = new Promise(function (ok, hong) {
+    var sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    sc.onload = function () { ok(window.html2canvas); }; sc.onerror = function () { _h2c = null; hong(new Error('Không tải được công cụ tạo ảnh. Kiểm tra mạng.')); };
+    document.head.appendChild(sc);
+  });
+  return _h2c;
+}
+function anhPhieu() {
+  var p = S.tam.phieu; if (!p) return;
+  cho(true);
+  taiH2C().then(function (h2c) {
+    var v = document.createElement('div'); v.id = 'vungAnh'; v.innerHTML = phieuHTML(p); document.body.appendChild(v);
+    return h2c(v.firstChild, { scale: 2, backgroundColor: '#ffffff', logging: false }).then(function (cv) { v.remove(); return cv; }, function (e) { v.remove(); throw e; });
+  }).then(function (cv) {
+    return new Promise(function (ok) { cv.toBlob(ok, 'image/png'); });
+  }).then(function (blob) {
+    cho(false);
+    var ten = 'phieu-' + boDau(p.khTen || 'khach').replace(/[^a-z0-9]+/g, '-') + '-' + ngayISO(new Date(p.thoiGian || Date.now())) + '.png';
+    var f = null; try { f = new File([blob], ten, { type: 'image/png' }); } catch (e) {}
+    if (f && navigator.canShare && navigator.canShare({ files: [f] })) {
+      return navigator.share({ files: [f], title: p.tieuDe }).catch(function (e) { if (e && e.name !== 'AbortError') taiAnh(blob, ten); });
+    }
+    taiAnh(blob, ten);
+  }).catch(function (e) { cho(false); loi(e); });
+}
+function taiAnh(blob, ten) {
+  var u = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = u; a.download = ten; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(u); }, 30000);
+  bao('Đã lưu ảnh phiếu vào máy (thư mục Tải về).');
 }
 function inPhieu() { $('#vungIn').innerHTML = phieuHTML(S.tam.phieu); setTimeout(function () { window.print(); }, 80); }
 
