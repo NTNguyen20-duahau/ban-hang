@@ -51,6 +51,7 @@ create table if not exists bh.slc_hang (
   ten_goc text not null default '', sl numeric not null default 0, von bigint not null default 0, doanh_thu bigint not null default 0);
 create index if not exists slc_hang_thang on bh.slc_hang (thang);
 
+alter table bh.hoa_don add column if not exists khong_tinh_bc boolean not null default false;
 create index if not exists hoa_don_kh on bh.hoa_don (kh_id);
 create index if not exists hoa_don_tg on bh.hoa_don (thoi_gian);
 create index if not exists thu_no_kh on bh.thu_no (kh_id);
@@ -177,7 +178,7 @@ create or replace function bh.kh_cong(k bh.khach_hang) returns jsonb language sq
 create or replace function bh.hd_cong(u bh.nhan_vien, r bh.hoa_don) returns jsonb language sql stable as $$
   select jsonb_build_object('kieu', 'HD', 'id', r.id, 'loai', r.loai, 'thoiGian', r.thoi_gian, 'khId', r.kh_id, 'khTen', r.kh_ten, 'khSdt', r.kh_sdt,
     'khDiaChi', r.kh_dia_chi, 'tong', r.tong, 'giamGia', r.giam_gia, 'noCu', r.no_cu, 'thanhToan', r.thanh_toan, 'conNo', r.con_no,
-    'nhanVien', r.nhan_vien, 'trangThai', r.trang_thai, 'ghiChu', r.ghi_chu,
+    'nhanVien', r.nhan_vien, 'trangThai', r.trang_thai, 'ghiChu', r.ghi_chu, 'khongTinhBC', r.khong_tinh_bc,
     'items', case when bh.co(u, 'xemGiaNhap') then r.items
       else coalesce((select jsonb_agg(it - 'von' order by n) from jsonb_array_elements(r.items) with ordinality a(it, n)), '[]'::jsonb) end) $$;
 
@@ -692,7 +693,7 @@ create or replace function bh.v_bao_cao(u bh.nhan_vien, d jsonb) returns jsonb l
 declare kq jsonb;
 begin
   perform bh.can(u, 'xemBaoCao');
-  with hd as (select r.*, case when r.loai = 'TRA' then -1 else 1 end dau from bh.hoa_don r where r.trang_thai = 'OK' and bh.trong(r.thoi_gian, d)),
+  with hd as (select r.*, case when r.loai = 'TRA' then -1 else 1 end dau from bh.hoa_don r where r.trang_thai = 'OK' and not r.khong_tinh_bc and bh.trong(r.thoi_gian, d)),
   it as (select hd.dau, x from hd, jsonb_array_elements(hd.items) x),
   tn as (select r.so_tien from bh.thu_no r where r.trang_thai = 'OK' and bh.trong(r.thoi_gian, d)),
   th as (select x->>'id' id, min(x->>'ten') ten, sum(dau * bh.so(x->'sl')) sl, sum(dau * bh.so(x->'sl') * bh.so(x->'gia')) tien from it group by x->>'id')
