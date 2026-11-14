@@ -335,7 +335,7 @@ function dangXuat() {
 /* ---------- khung & điều hướng ---------- */
 var TRANG = [
   { id: 'ban', ten: 'Bán hàng', bt: '🧾' }, { id: 'khach', ten: 'Khách hàng', bt: '👥' }, { id: 'hang', ten: 'Hàng hoá', bt: '📦' }, { id: 'hd', ten: 'Hoá đơn', bt: '🗂' },
-  { id: 'nhap', ten: 'Nhập hàng', q: 'nhapHang' }, { id: 'kiemKho', ten: 'Kiểm kho', q: 'kiemKho' }, { id: 'bc', ten: 'Báo cáo', q: 'xemBaoCao' }, { id: 'dt', ten: 'Công nợ đối tác', q: 'congNoTKA' },
+  { id: 'nhap', ten: 'Nhập hàng', q: 'nhapHang' }, { id: 'kiemKho', ten: 'Kiểm kho', q: 'kiemKho' }, { id: 'bc', ten: 'Báo cáo', q: 'xemBaoCao' }, { id: 'ton', ten: 'Báo cáo tồn kho', q: 'xemGiaNhap' }, { id: 'dt', ten: 'Công nợ đối tác', q: 'congNoTKA' },
   { id: 'nv', ten: 'Nhân viên', chu: 1 }, { id: 'caiDat', ten: 'Cài đặt cửa hàng', chu: 1 }, { id: 'nhatKy', ten: 'Nhật ký thao tác', chu: 1 }
 ];
 function duocVao(t) { return t.chu ? S.toi.laChu : (t.q ? co(t.q) : true); }
@@ -357,7 +357,7 @@ function di(t, laLui) {
   });
   window.scrollTo(0, 0);
   capNhatNutLui();
-  ({ ban: veBan, khach: veKhach, hang: veHang, hd: veHD, nhap: veNhap, kiemKho: veKiemKho, bc: veBC, dt: veDT, nv: veNV, caiDat: veCaiDat, nhatKy: veNhatKy, them: veThem })[t]();
+  ({ ban: veBan, khach: veKhach, hang: veHang, hd: veHD, nhap: veNhap, kiemKho: veKiemKho, bc: veBC, ton: veTon, dt: veDT, nv: veNV, caiDat: veCaiDat, nhatKy: veNhatKy, them: veThem })[t]();
 }
 function chinh(html) { $('#chinh').innerHTML = html; }
 function veThem() {
@@ -902,6 +902,51 @@ function taiBC() {
     h += '<div class="the"><div class="dam">Khách đang nợ (' + no.length + ')</div><div class="cuon"><table class="bang"><tr><th>Khách</th><th>Số ĐT</th><th class="phai">Đang nợ</th></tr>' + (no.map(function (k) { return '<tr><td>' + E(k.ten) + '</td><td>' + E(k.sdt) + '</td><td class="phai so doChu">' + tien(k.no) + '</td></tr>'; }).join('') || '<tr><td colspan="3" class="mo">Không có khách nào nợ.</td></tr>') + '</table></div></div>';
     $('#ndBC').innerHTML = h;
   }).catch(loi);
+}
+
+/* ====================== BÁO CÁO TỒN KHO ====================== */
+function veTon() {
+  chinh('<div class="tieuDeTrang"><h2>Báo cáo tồn kho</h2><button class="nut" onclick="xuatTon()">⬇ Xuất Excel</button></div>' +
+    '<div class="the"><input class="nhap" id="timTon" placeholder="Tìm tên hàng…" oninput="locTon()">' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 2px 0">' +
+    '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="tonBo0" checked onchange="locTon()" style="width:18px;height:18px"> Ẩn hàng tồn = 0</label>' +
+    '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="tonBoNgung" checked onchange="locTon()" style="width:18px;height:18px"> Ẩn hàng ngừng bán</label>' +
+    '<select id="tonXep" onchange="locTon()" style="height:36px;border:1px solid #c9c7be;border-radius:9px;padding:0 8px;background:#fff"><option value="tien">Xếp: tiền nhiều → ít</option><option value="ten">Xếp: tên A → Z</option><option value="sl">Xếp: số lượng nhiều → ít</option></select></div></div>' +
+    '<div id="tomTon"></div><div class="the"><div class="cuon"><table class="bang" id="bangTon"></table></div></div>');
+  locTon();
+}
+function dsTon() {
+  var q = $('#timTon') ? $('#timTon').value.trim() : '', bo0 = !$('#tonBo0') || $('#tonBo0').checked, boNgung = !$('#tonBoNgung') || $('#tonBoNgung').checked, xep = $('#tonXep') ? $('#tonXep').value : 'tien';
+  var ds = S.hang.filter(function (p) { return (!q || khop(p.ten, q)) && (!bo0 || p.ton !== 0) && (!boNgung || !p.ngung); })
+    .map(function (p) { return { p: p, tien: p.ton > 0 ? p.ton * (p.giaNhap || 0) : 0 }; });
+  ds.sort(function (a, b) {
+    if (xep === 'ten') return a.p.ten.localeCompare(b.p.ten, 'vi');
+    if (xep === 'sl') return b.p.ton - a.p.ton;
+    return b.tien - a.tien || b.p.ton - a.p.ton;
+  });
+  return ds;
+}
+function locTon() {
+  var ds = dsTon(), tongSL = 0, tongTien = 0, am = 0, thieuGia = 0;
+  ds.forEach(function (x) { if (x.p.ton > 0) { tongSL += x.p.ton; tongTien += x.tien; if (!x.p.giaNhap) thieuGia++; } else if (x.p.ton < 0) am++; });
+  $('#tomTon').innerHTML = '<div class="luoi"><div class="oSo"><small>Tổng giá trị tồn kho (theo giá nhập)</small><b class="so xanhChu">' + tien(tongTien) + '</b></div>' +
+    '<div class="oSo"><small>Tổng số lượng tồn</small><b class="so">' + tien(tongSL) + '</b></div><div class="oSo"><small>Số mặt hàng trong danh sách</small><b>' + ds.length + '</b></div></div>' +
+    (thieuGia ? '<div class="canhBao">' + thieuGia + ' mặt hàng còn tồn nhưng chưa có giá nhập (tính 0 đ), nên tổng giá trị đang thấp hơn thực tế. Điền giá nhập ở trang Hàng hoá.</div>' : '') +
+    (am ? '<div class="canhBao">' + am + ' mặt hàng có số tồn âm (bán nhiều hơn số đã nhập trên web) — không tính vào tổng. Hãy làm Kiểm kho để sửa số tồn.</div>' : '') +
+    '<p class="mo nho" style="margin:0 2px 10px">Số liệu lúc tải trang. Bấm “⟳ Làm mới” ở trên cùng để lấy số mới nhất.</p>';
+  $('#bangTon').innerHTML = '<tr><th>Tên hàng</th><th>ĐVT</th><th class="phai">SL tồn</th><th class="phai">Giá nhập</th><th class="phai">Thành tiền</th></tr>' +
+    (ds.map(function (x) {
+      var p = x.p;
+      return '<tr><td>' + E(p.ten) + (p.ngung ? ' <span class="nhan xam">ngừng bán</span>' : '') + '</td><td>' + E(p.donVi) + '</td><td class="phai so' + (p.ton < 0 ? ' doChu' : '') + '">' + tien(p.ton) + '</td>' +
+        '<td class="phai so">' + (p.giaNhap ? tien(p.giaNhap) : '<span class="doChu nho">chưa có</span>') + '</td><td class="phai so dam">' + (p.ton > 0 ? tien(x.tien) : '–') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" class="mo">Không có mặt hàng nào.</td></tr>') +
+    (ds.length ? '<tr><td class="dam" colspan="2">Tổng cộng</td><td class="phai so dam">' + tien(tongSL) + '</td><td></td><td class="phai so dam xanhChu">' + tien(tongTien) + '</td></tr>' : '');
+}
+function xuatTon() {
+  var rows = [['STT', 'Tên hàng', 'ĐVT', 'SL tồn', 'Giá nhập', 'Thành tiền']], tongSL = 0, tongTien = 0;
+  dsTon().forEach(function (x, i) { var p = x.p; rows.push([i + 1, p.ten, p.donVi, p.ton, p.giaNhap || 0, p.ton > 0 ? x.tien : 0]); if (p.ton > 0) { tongSL += p.ton; tongTien += x.tien; } });
+  rows.push(['', 'TỔNG CỘNG', '', tongSL, '', tongTien]);
+  hopXuat('Báo cáo tồn kho (' + ngayGio(Date.now()) + ')', 'ton-kho', rows, [1, 2]);
 }
 
 /* ====================== CÔNG NỢ ĐỐI TÁC ====================== */
