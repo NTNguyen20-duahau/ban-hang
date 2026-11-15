@@ -148,6 +148,8 @@ table.bang th{font-size:12px;color:var(--mo);font-weight:600}
 .phieu .tg td{padding:.8mm 0;font-size:13pt}
 .phieu .tg td:first-child{text-align:right;width:58%;padding-right:2mm;font-weight:700}
 .phieu .tg td:last-child{text-align:right}
+.phieu .tg.ql td:first-child{width:30%;white-space:nowrap}
+.phieu .tg.ql td:last-child{text-align:left;font-weight:700}
 .phieu .cuoi{border-top:1px dotted #000;margin-top:3mm;padding-top:2mm;text-align:center}
 .xemPhieu{background:#e9e7df;border-radius:10px;padding:10px;overflow:auto}
 .xemPhieu .phieu{box-shadow:0 1px 4px rgba(0,0,0,.2);padding:4mm 3mm;width:100%;max-width:440px;font-size:16px}
@@ -176,6 +178,7 @@ var SUPA = { url: 'https://tqarsvymirhibestjrcw.supabase.co', key: 'sb_publishab
 var LS = { push: function (st) { history.pushState(st, ''); }, setChangeHandler: function (fn) { window.addEventListener('popstate', fn); } };
 var G = gioMoi('BAN');
 var N = { items: [] };
+var Q = { dtId: 0, loai: 'CHUYEN_HANG', items: [], dem: 0 };
 var dangGoi = 0;
 
 /* ---------- tiện ích ---------- */
@@ -341,7 +344,7 @@ function dangXuat() {
 /* ---------- khung & điều hướng ---------- */
 var TRANG = [
   { id: 'ban', ten: 'Bán hàng', bt: '🧾' }, { id: 'khach', ten: 'Khách hàng', bt: '👥' }, { id: 'hang', ten: 'Hàng hoá', bt: '📦' }, { id: 'hd', ten: 'Hoá đơn', bt: '🗂' },
-  { id: 'nhap', ten: 'Nhập hàng', q: 'nhapHang' }, { id: 'kiemKho', ten: 'Kiểm kho', q: 'kiemKho' }, { id: 'bc', ten: 'Báo cáo', q: 'xemBaoCao' }, { id: 'ton', ten: 'Báo cáo tồn kho', q: 'xemGiaNhap' }, { id: 'slc', ten: 'Số liệu cũ (phần mềm cũ)', q: 'xemBaoCao' }, { id: 'dt', ten: 'Công nợ đối tác', q: 'congNoTKA' },
+  { id: 'nhap', ten: 'Nhập hàng', q: 'nhapHang' }, { id: 'kiemKho', ten: 'Kiểm kho', q: 'kiemKho' }, { id: 'bc', ten: 'Báo cáo', q: 'xemBaoCao' }, { id: 'ton', ten: 'Báo cáo tồn kho', q: 'xemGiaNhap' }, { id: 'slc', ten: 'Số liệu cũ (phần mềm cũ)', q: 'xemBaoCao' }, { id: 'dt', ten: 'Công nợ đối tác', q: 'congNoTKA' }, { id: 'ql', ten: 'Chuyển hàng qua lại', q: 'chuyenHang' },
   { id: 'nv', ten: 'Nhân viên', chu: 1 }, { id: 'caiDat', ten: 'Cài đặt cửa hàng', chu: 1 }, { id: 'nhatKy', ten: 'Nhật ký thao tác', chu: 1 }
 ];
 function duocVao(t) { return t.chu ? S.toi.laChu : (t.q ? co(t.q) : true); }
@@ -363,7 +366,7 @@ function di(t, laLui) {
   });
   window.scrollTo(0, 0);
   capNhatNutLui();
-  ({ ban: veBan, khach: veKhach, hang: veHang, hd: veHD, nhap: veNhap, kiemKho: veKiemKho, bc: veBC, ton: veTon, slc: veSLC, dt: veDT, nv: veNV, caiDat: veCaiDat, nhatKy: veNhatKy, them: veThem })[t]();
+  ({ ban: veBan, khach: veKhach, hang: veHang, hd: veHD, nhap: veNhap, kiemKho: veKiemKho, bc: veBC, ton: veTon, slc: veSLC, dt: veDT, ql: veQL, nv: veNV, caiDat: veCaiDat, nhatKy: veNhatKy, them: veThem })[t]();
 }
 function chinh(html) { $('#chinh').innerHTML = html; }
 function veThem() {
@@ -540,8 +543,8 @@ function phieuTuThu(p) {
 function phieuHTML(p) {
   var c = S.cd, h = '<div class="phieu"><div class="g b">' + E(c.ten1) + '</div>' + (c.ten2 ? '<div class="g b">' + E(c.ten2) + '</div>' : '') + (c.sdt ? '<div class="g n">ĐT: ' + E(c.sdt) + '</div>' : '') + (c.diaChi ? '<div class="g n">' + E(c.diaChi) + '</div>' : '') +
     '<div class="td">' + p.tieuDe + '</div><div class="g">' + gioPhieu(p.thoiGian) + '</div>' +
-    '<table class="kh"><tr><td>Tên KH:</td><td class="b">' + E(p.khTen) + '</td></tr><tr><td>ĐT:</td><td class="b">' + E(p.khSdt) + '</td></tr><tr><td>Địa chỉ :</td><td>' + E(p.khDiaChi) + '</td></tr></table>';
-  function dong(nhan, v, luon) { return '<tr><td>' + nhan + '</td><td>' + (v || luon ? tien(v) : '') + '</td></tr>'; }
+    '<table class="kh"><tr><td>' + (p.nhanKH || 'Tên KH:') + '</td><td class="b">' + E(p.khTen) + '</td></tr><tr><td>ĐT:</td><td class="b">' + E(p.khSdt) + '</td></tr><tr><td>Địa chỉ :</td><td>' + E(p.khDiaChi) + '</td></tr></table>';
+  function dong(nhan, v, luon) { return '<tr><td>' + nhan + '</td><td>' + (typeof v === 'string' ? E(v) : v || luon ? tien(v) : '') + '</td></tr>'; }
   var tg = '';
   if (p.items) {
     h += '<table class="hang"><thead><tr><th>TÊN HÀNG</th><th>SL</th><th>ĐG</th><th>TT</th></tr></thead><tbody>';
@@ -550,8 +553,9 @@ function phieuHTML(p) {
     if (p.giam) tg += dong('Cộng tiền hàng :', p.tong + p.giam) + dong('Giảm giá' + (p.giamPT ? ' (' + String(p.giamPT).replace('.', ',') + '%)' : '') + ' :', p.giam);
     tg += dong('Tổng cộng :', p.tong, 1);
   }
-  tg += dong('Tiền cũ:', p.noCu) + dong(p.nhanTT + ' :', p.tt, 1) + dong('Còn lại :', p.conNo);
-  h += '<table class="tg" style="margin-top:' + (p.items ? '1mm' : '3mm') + '">' + tg + '</table><div class="cuoi">' + E(c.loiCamOn || '') + '</div></div>';
+  if (p.dongCuoi) p.dongCuoi.forEach(function (d) { tg += dong(d[0], d[1], 1); });
+  else tg += dong('Tiền cũ:', p.noCu) + dong(p.nhanTT + ' :', p.tt, 1) + dong('Còn lại :', p.conNo);
+  h += '<table class="tg' + (p.dongCuoi ? ' ql' : '') + '" style="margin-top:' + (p.items ? '1mm' : '3mm') + '">' + tg + '</table><div class="cuoi">' + E(c.loiCamOn || '') + '</div></div>';
   return h;
 }
 function xemPhieu(p, inLuon, them) {
@@ -946,6 +950,142 @@ function xemNhap(i) {
     x.trangThai === 'OK' ? '<button class="nut do" style="width:100%" onclick="huyNhapHoi(' + x.id + ')">Huỷ phiếu nhập</button>' : '');
 }
 
+/* ====================== CHUYỂN HÀNG QUA LẠI (sổ qua lại với cửa hàng khác) ======================
+   no > 0: cửa hàng mình nợ bên kia; no < 0: bên kia nợ mình. */
+var QL_LOAI = {
+  CHUYEN_HANG: { ten: 'Chuyển hàng', nut: '📤 Chuyển hàng', td: 'PHIẾU CHUYỂN HÀNG', hang: 1, nhan: 'cam' },
+  NHAN_HANG: { ten: 'Nhận hàng', nut: '📥 Nhận hàng', td: 'PHIẾU NHẬN HÀNG', hang: 1, nhan: '' },
+  NHAN_TIEN: { ten: 'Nhận tiền', nut: '💵 Nhận tiền', td: 'PHIẾU NHẬN TIỀN', nhan: '' },
+  DUA_TIEN: { ten: 'Đưa tiền', nut: '💸 Đưa tiền', td: 'PHIẾU ĐƯA TIỀN', nhan: 'cam' },
+  NHAP: { ten: 'Nhập hàng', td: 'PHIẾU NHẬP HÀNG', hang: 1, nhan: 'xam' },
+  TRA: { ten: 'Trả tiền', td: 'PHIẾU TRẢ TIỀN', nhan: 'xam' }
+};
+function soDuDai(no, ten) { return no < 0 ? ten + ' đang nợ cửa hàng mình ' + tien(-no) : no > 0 ? 'Cửa hàng mình đang nợ ' + ten + ' ' + tien(no) : 'Hai bên không nợ nhau'; }
+function soDuNgan(no) { return no < 0 ? 'họ nợ mình ' + tien(-no) : no > 0 ? 'mình nợ họ ' + tien(no) : 'hết nợ'; }
+function veQL() {
+  var ds = S.doiTac.filter(function (x) { return !x.ngung; });
+  if (!Q.dtId || !ds.some(function (x) { return x.id === Q.dtId; })) Q.dtId = (ds.filter(function (x) { return x.id !== 1; })[0] || ds[0] || {}).id || 0;
+  var nutLoai = ['CHUYEN_HANG', 'NHAN_HANG', 'NHAN_TIEN', 'DUA_TIEN'].map(function (l) { return '<button class="nut' + (Q.loai === l ? ' chinh' : '') + '" onclick="doiLoaiQL(\'' + l + '\')">' + QL_LOAI[l].nut + '</button>'; }).join('');
+  chinh('<div class="tieuDeTrang"><h2>Chuyển hàng qua lại</h2><button class="nut" onclick="hopSuaDT(0)">+ Thêm cửa hàng</button></div>' +
+    (ds.length ? '<div class="the"><label class="o">Cửa hàng<select id="qlDT" onchange="Q.dtId=+this.value;Q.items=[];veQL()">' + ds.map(function (x) { return '<option value="' + x.id + '"' + (x.id === Q.dtId ? ' selected' : '') + '>' + E(x.ten) + '</option>'; }).join('') + '</select></label>' +
+      '<div id="soDuQL" class="dam" style="font-size:17px;margin:4px 0 12px">…</div>' +
+      '<div class="hangNut" style="flex-wrap:wrap;margin-bottom:12px">' + nutLoai + '</div><div id="formQL"></div></div>' +
+      '<div class="the"><div class="tieuDeTrang" style="margin:0 0 6px"><div class="dam">Sổ qua lại</div><button class="nut nho" onclick="xuatQL()">⬇ Xuất Excel</button></div><ul class="ds" id="soQL"><li class="tinh mo">Đang tải…</li></ul></div>' +
+      '<p class="mo nho">Hàng chuyển qua lại không tính vào doanh thu, lợi nhuận. Chuyển hàng thì tồn kho giảm, nhận hàng thì tồn kho tăng; số dư với cửa hàng kia tự cập nhật.</p>'
+    : '<div class="the"><p>Chưa có cửa hàng nào. Bấm <b>+ Thêm cửa hàng</b> để thêm (ví dụ: cửa hàng của em họ).</p></div>'));
+  if (!ds.length) return;
+  veFormQL();
+  goi('soQuaLai', { dtId: Q.dtId }).then(hienSoQL).catch(loi);
+}
+function doiLoaiQL(l) {
+  var hangCu = QL_LOAI[Q.loai].hang, hangMoi = QL_LOAI[l].hang;
+  if (hangCu && hangMoi && Q.loai !== l) Q.items.forEach(function (it) { var p = hangCua(it.id); if (p && !it.suaGia) it.gia = p.giaNhap || 0; });
+  if (!hangMoi) Q.items = [];
+  Q.loai = l; Q._ma = null;
+  document.querySelectorAll('#chinh .hangNut .nut').forEach(function (b) { b.classList.toggle('chinh', b.textContent === QL_LOAI[l].nut); });
+  veFormQL();
+}
+function veFormQL() {
+  var L = QL_LOAI[Q.loai], o = $('#formQL'); if (!o) return;
+  if (L.hang) {
+    o.innerHTML = '<input class="nhap" id="timQL" placeholder="Gõ tên hàng để ' + (Q.loai === 'CHUYEN_HANG' ? 'chuyển đi' : 'nhận về') + '…" autocomplete="off" oninput="goiYQL()"><div id="gyQL"></div><div id="gioQL"></div>' +
+      '<label class="o" style="margin-top:10px">Ghi chú<input id="qlGC"></label><button class="nut chinh" style="width:100%" onclick="luuQL()">Lưu phiếu ' + L.ten.toLowerCase() + '</button>';
+    veGioQL();
+  } else {
+    o.innerHTML = '<label class="o">Số tiền ' + (Q.loai === 'NHAN_TIEN' ? 'nhận từ cửa hàng kia (mình mượn, hoặc họ trả nợ)' : 'đưa cho cửa hàng kia (mình trả nợ, hoặc cho mượn)') + '<input id="qlTien" inputmode="numeric" oninput="dinhDang(this)" style="font-size:20px"></label>' +
+      '<label class="o">Ghi chú<input id="qlGC" placeholder="Ví dụ: mượn tiền nhập hàng, trả tiền hàng tuần trước…"></label><button class="nut chinh" style="width:100%" onclick="luuQL()">Lưu phiếu ' + L.ten.toLowerCase() + '</button>';
+  }
+}
+function goiYQL() {
+  var q = $('#timQL').value.trim(), o = $('#gyQL');
+  if (!q) { o.innerHTML = ''; return; }
+  var ds = S.hang.filter(function (p) { return !p.ngung && khop(p.ten, q); }).slice(0, 30);
+  o.innerHTML = '<div class="goiY"><ul class="ds">' + (ds.map(function (p) { return '<li onclick="themQL(' + p.id + ')"><div class="c1">' + E(p.ten) + '</div><span class="nho mo">tồn ' + tien(p.ton) + '</span></li>'; }).join('') || '<li class="tinh mo">Không thấy. Thêm mặt hàng mới ở trang Hàng hoá trước.</li>') + '</ul></div>';
+}
+function themQL(id) {
+  var it = Q.items.filter(function (x) { return x.id === id; })[0], p = hangCua(id);
+  Q.dem = (Q.dem || Q.items.length) + 1;
+  if (it) { it.sl++; it.t = Q.dem; } else Q.items.push({ id: id, sl: 1, gia: p.giaNhap || 0, t: Q.dem });
+  $('#timQL').value = ''; $('#gyQL').innerHTML = ''; veGioQL(); $('#timQL').focus();
+}
+function veGioQL() {
+  var tong = 0, chuyen = Q.loai === 'CHUYEN_HANG', o = $('#gioQL'); if (!o) return;
+  var thuTu = Q.items.map(function (x, i) { return i; }).sort(function (a, b) { return (Q.items[b].t || b) - (Q.items[a].t || a) || b - a; });
+  var h = thuTu.map(function (i) {
+    var it = Q.items[i], p = hangCua(it.id) || { ten: '?', ton: 0, donVi: '' }; tong += it.sl * it.gia;
+    var vuot = chuyen && it.sl > p.ton;
+    return '<div class="dong"><div class="tenH"><span>' + E(p.ten) + ' <small class="mo" style="font-weight:400">(' + E(p.donVi) + ' · tồn ' + tien(p.ton) + ')</small>' + (vuot ? ' <span class="nhan do">vượt tồn kho</span>' : '') + '</span><button onclick="Q.items.splice(' + i + ',1);veGioQL()" aria-label="Bỏ">×</button></div>' +
+      '<div class="dk"><div class="sl"><button onclick="Q.items[' + i + '].sl=Math.max(1,Q.items[' + i + '].sl-1);veGioQL()">−</button><input inputmode="numeric" value="' + it.sl + '" onchange="Q.items[' + i + '].sl=Math.max(1,so(this.value));veGioQL()" aria-label="Số lượng"><button onclick="Q.items[' + i + '].sl++;veGioQL()">+</button></div>' +
+      '<div class="gia"><input inputmode="numeric" placeholder="Giá" value="' + (it.gia ? tien(it.gia) : '') + '" oninput="dinhDang(this)" onchange="Q.items[' + i + '].gia=Math.max(0,so(this.value));Q.items[' + i + '].suaGia=1;veGioQL()" aria-label="Đơn giá"></div><div class="tt so">' + tien(it.sl * it.gia) + '</div></div></div>';
+  }).join('') || '<p class="mo" style="margin:12px 0 2px">Chưa chọn mặt hàng nào.</p>';
+  if (Q.items.length) h += '<div class="tongKet"><div class="lon"><span>Tổng tiền hàng (' + (chuyen ? 'họ nợ mình thêm' : 'mình nợ họ thêm') + ')</span><span class="so">' + tien(tong) + '</span></div><div class="nho mo">Giá mặc định là giá nhập, sửa được từng dòng.</div></div>';
+  o.innerHTML = h;
+}
+function luuQL(xn) {
+  var L = QL_LOAI[Q.loai], d = { dtId: Q.dtId, loai: Q.loai, ghiChu: ($('#qlGC') || {}).value || '' };
+  if (!Q.dtId) return bao('Chưa chọn cửa hàng.', true);
+  if (L.hang) {
+    if (!Q.items.length) return bao('Chưa chọn mặt hàng nào.', true);
+    if (!xn && Q.loai === 'CHUYEN_HANG' && Q.items.some(function (it) { var p = hangCua(it.id); return p && it.sl > p.ton; }))
+      return hoi('Có mặt hàng chuyển đi nhiều hơn số tồn kho trên web. Vẫn lưu?', 'Vẫn lưu', function () { luuQL(1); });
+    if (!xn && Q.items.some(function (it) { return !it.gia; })) return hoi('Có mặt hàng chưa có giá (sẽ tính 0 đồng). Vẫn lưu?', 'Vẫn lưu', function () { luuQL(1); });
+    d.items = Q.items.map(function (x) { return { id: x.id, sl: x.sl, gia: x.gia }; });
+  } else {
+    d.soTien = so($('#qlTien').value);
+    if (d.soTien <= 0) return bao('Nhập số tiền.', true);
+  }
+  Q._ma = Q._ma || maMoi(); d._ma = Q._ma;
+  goi('luuQuaLai', d).then(function (r) {
+    capNhat(r); Q.items = []; Q._ma = null; Q.dem = 0;
+    bao('Đã lưu phiếu ' + L.ten.toLowerCase() + ' #' + r.moiId + '.');
+    veFormQL(); hienSoQL(r);
+    var i = (S.tam.ql || []).findIndex(function (x) { return x.kieu === 'QL' && x.id === r.moiId; });
+    if (i >= 0) xemQL(i);
+  }).catch(loi);
+}
+function hienSoQL(r) {
+  if (S.trang !== 'ql' || r.dt.id !== Q.dtId) return;
+  S.tam.ql = r.ds; S.tam.qlDT = r.dt;
+  var b = $('#soDuQL'); if (b) { b.textContent = soDuDai(r.dt.no, r.dt.ten); b.className = 'dam ' + (r.dt.no > 0 ? 'doChu' : r.dt.no < 0 ? 'xanhChu' : ''); }
+  $('#soQL').innerHTML = r.ds.map(function (x, i) {
+    var L = QL_LOAI[x.loai] || { ten: x.loai, nhan: '' }, huy = x.trangThai !== 'OK';
+    return '<li onclick="xemQL(' + i + ')"><div class="c1"><div><span class="nhan ' + L.nhan + '">' + L.ten + ' #' + x.id + '</span>' + (huy ? ' <span class="nhan xam">đã huỷ</span>' : '') + (x.ghiChu ? ' ' + E(x.ghiChu) : '') + '</div>' +
+      '<div class="nho mo">' + ngayGio(x.thoiGian) + ' · ' + E(x.nhanVien) + (x.chiTiet ? ' · ' + E(x.chiTiet.length > 60 ? x.chiTiet.slice(0, 60) + '…' : x.chiTiet) : '') + '</div></div>' +
+      '<div class="phai so"><div class="dam"' + (huy ? ' style="text-decoration:line-through"' : '') + '>' + tien(x.tong) + '</div>' + (huy ? '' : '<div class="nho mo">sau: ' + soDuNgan(x.soDuSau) + '</div>') + '</div></li>';
+  }).join('') || '<li class="tinh mo">Chưa có phiếu nào với cửa hàng này.</li>';
+}
+function xemQL(i) {
+  var x = S.tam.ql[i], dt = S.tam.qlDT, L = QL_LOAI[x.loai] || { td: 'PHIẾU' }, ok = x.trangThai === 'OK';
+  var cuoi = [];
+  if (!L.hang) cuoi.push(['Số tiền :', x.tong]);
+  var ch = S.cd.ten2 || S.cd.ten1;
+  function sd(no) { return no < 0 ? dt.ten + ' nợ ' + ch + ' ' + tien(-no) : no > 0 ? ch + ' nợ ' + dt.ten + ' ' + tien(no) : 'Hai bên hết nợ'; }
+  if (ok) { cuoi.push(['Trước :', sd(x.soDuSau - x.e)]); cuoi.push(['Sau :', sd(x.soDuSau)]); }
+  else cuoi.push(['Trạng thái :', 'ĐÃ HUỶ']);
+  var p = { tieuDe: L.td, thoiGian: x.thoiGian, nhanKH: 'Cửa hàng:', khTen: dt.ten, khSdt: dt.sdt, khDiaChi: x.ghiChu ? 'Ghi chú: ' + x.ghiChu : dt.diaChi,
+    items: L.hang ? x.items : null, tong: x.tong, dongCuoi: cuoi };
+  xemPhieu(p, 0, ok && x.kieu === 'QL' ? '<button class="nut do" onclick="huyQL(' + i + ')">Huỷ phiếu</button>' : '');
+}
+function huyQL(i) {
+  var x = S.tam.ql[i], L = QL_LOAI[x.loai];
+  hoi('Huỷ phiếu ' + L.ten.toLowerCase() + ' #' + x.id + '?\n' + (L.hang ? 'Tồn kho và ' : '') + 'số dư với ' + S.tam.qlDT.ten + ' sẽ trả lại như trước.', 'Huỷ phiếu', function (lyDo) {
+    goi('huyQuaLai', { id: x.id, lyDo: lyDo }).then(function (r) { capNhat(r); dongHop(); bao('Đã huỷ phiếu.'); hienSoQL(r); veGioQL(); }).catch(loi);
+  }, 'Lý do (có thể để trống)');
+}
+function xuatQL() {
+  var ds = S.tam.ql, dt = S.tam.qlDT; if (!ds) return bao('Đang tải sổ, chờ một chút rồi bấm lại.', true);
+  var rows = [['Ngày', 'Loại', 'Số phiếu', 'Tên hàng', 'SL', 'Đơn giá', 'Thành tiền', 'Tổng phiếu', 'Số dư sau phiếu', 'Trạng thái', 'Ghi chú', 'Người làm']];
+  ds.slice().reverse().forEach(function (x) {
+    var L = QL_LOAI[x.loai] || { ten: x.loai }, tt = x.trangThai === 'OK' ? '' : 'Đã huỷ', sd = x.trangThai === 'OK' ? soDuNgan(x.soDuSau) : '';
+    if (x.items && x.items.length) x.items.forEach(function (it, j) {
+      var c = j === x.items.length - 1;
+      rows.push([ngayGio(x.thoiGian), L.ten, x.id, it.ten, it.sl, it.gia, it.sl * it.gia, c ? x.tong : '', c ? sd : '', tt, c ? x.ghiChu : '', x.nhanVien]);
+    });
+    else rows.push([ngayGio(x.thoiGian), L.ten, x.id, '', '', '', '', x.tong, sd, tt, x.ghiChu, x.nhanVien]);
+  });
+  hopXuat('Sổ qua lại — ' + dt.ten, 'so-qua-lai-' + boDau(dt.ten).replace(/[^a-z0-9]+/g, '-'), rows, [0, 3, 8]);
+}
+
 /* ====================== KIỂM KHO ====================== */
 function veKiemKho() {
   chinh('<div class="tieuDeTrang"><h2>Kiểm kho</h2></div><p class="mo" style="margin-top:0">Đếm hàng thực tế rồi gõ vào ô “Thực tế”. Ô nào để trống thì giữ nguyên số tồn. Bấm Lưu khi xong.</p>' +
@@ -1097,7 +1237,7 @@ function luuDT(id) {
   var d = { id: id, ten: $('#dtTen').value, sdt: $('#dtSdt').value, diaChi: $('#dtDC').value };
   if ($('#dtNo')) d.noDauKy = so($('#dtNo').value);
   if ($('#dtNgung')) d.ngung = $('#dtNgung').checked;
-  goi('luuDoiTac', d).then(function (r) { dongHop(); bao('Đã lưu đối tác.'); hienDSDT(r); }).catch(loi);
+  goi('luuDoiTac', d).then(function (r) { dongHop(); bao('Đã lưu.'); hienDSDT(r); if (S.trang === 'ql') { if (!id && r.id) Q.dtId = r.id; veQL(); } }).catch(loi);
 }
 function hopDT(id) {
   moHop('Đối tác', '<p class="mo">Đang tải…</p>');
@@ -1108,7 +1248,7 @@ function hienDT(r) {
   var nd = '<div class="nho mo">' + E(x.sdt) + (x.diaChi ? ' · ' + E(x.diaChi) : '') + '</div>' +
     '<div class="luoi" style="margin:10px 0"><div class="oSo"><small>Đang nợ (web tính)</small><b class="so doChu">' + tien(x.no) + '</b></div><div class="oSo"><small>Theo kế toán đối tác</small><b class="so">' + (x.noKeToan == null ? 'Chưa nhập' : tien(x.noKeToan)) + '</b></div></div>' +
     (lech == null ? '' : lech === 0 ? '<p class="xanhChu dam">Hai số khớp nhau.</p>' : '<div class="canhBao">Lệch ' + tien(Math.abs(lech)) + ': web đang tính ' + (lech > 0 ? 'cao hơn' : 'thấp hơn') + ' số của kế toán. Kiểm tra lại phiếu nhập và phiếu trả tiền.</div>') +
-    '<div class="hangNut" style="margin-bottom:12px"><button class="nut chinh" onclick="hopTraDT(' + x.id + ')">Ghi trả tiền</button><button class="nut" onclick="hopDoiChieu(' + x.id + ',' + (x.noKeToan == null ? 'null' : x.noKeToan) + ',' + x.no + ')">Đối chiếu</button><button class="nut" onclick="hopSuaDT(' + x.id + ')">Sửa</button></div>' +
+    '<div class="hangNut" style="margin-bottom:12px"><button class="nut chinh" onclick="hopTraDT(' + x.id + ')">Ghi trả tiền</button><button class="nut" onclick="hopDoiChieu(' + x.id + ',' + (x.noKeToan == null ? 'null' : x.noKeToan) + ',' + x.no + ')">Đối chiếu</button><button class="nut" onclick="hopSuaDT(' + x.id + ')">Sửa</button>' + (co('chuyenHang') ? '<button class="nut" onclick="Q.dtId=' + x.id + ';dongHop();di(\'ql\')">Sổ qua lại</button>' : '') + '</div>' +
     '<div class="dam">Các lần trả tiền</div><ul class="ds">' + (r.tra.map(function (t) { return '<li class="tinh"><div class="c1"><div>' + ngayGio(t.thoiGian) + ' · ' + E(t.nhanVien) + (t.trangThai !== 'OK' ? ' <span class="nhan xam">đã huỷ</span>' : '') + '</div><div class="nho mo">' + E(t.ghiChu) + '</div></div><div class="so dam">' + tien(t.soTien) + '</div>' + (t.trangThai === 'OK' ? '<button class="nut nho do" onclick="huyTraDT(' + t.id + ')">Huỷ</button>' : '') + '</li>'; }).join('') || '<li class="tinh mo">Chưa có.</li>') + '</ul>' +
     '<div class="dam" style="margin-top:10px">Phiếu nhập hàng</div><ul class="ds">' + (r.nhap.map(function (p) { return '<li class="tinh"><div class="c1"><div>#' + p.id + ' · ' + ngayGio(p.thoiGian) + (p.trangThai !== 'OK' ? ' <span class="nhan xam">đã huỷ</span>' : '') + '</div><div class="nho mo">' + E(p.chiTiet) + '</div></div>' + (p.tong != null ? '<div class="so dam">' + tien(p.tong) + '</div>' : '') + '</li>'; }).join('') || '<li class="tinh mo">Chưa có.</li>') + '</ul>';
   var h = $('#hop'); if (!h) return;
