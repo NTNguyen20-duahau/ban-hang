@@ -309,6 +309,24 @@ begin
 end $$;
 
 /* ---------- Khách hàng ---------- */
+
+create or replace function bh.v_xoa_khach(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
+declare k bh.khach_hang; xoa int[] := '{}'; bo text[] := '{}'; ten_xoa text[] := '{}'; x jsonb;
+begin
+  if not u.la_chu then perform bh.loi('Chỉ chủ cửa hàng mới được xoá khách.'); end if;
+  if jsonb_typeof(d->'ids') <> 'array' or jsonb_array_length(d->'ids') = 0 then perform bh.loi('Chưa chọn khách nào.'); end if;
+  for x in select * from jsonb_array_elements(d->'ids') loop
+    select * into k from bh.khach_hang where id = bh.so(x);
+    if not found then continue; end if;
+    if k.no <> 0 then bo := bo || k.ten; continue; end if;
+    delete from bh.khach_hang where id = k.id;
+    xoa := xoa || k.id; ten_xoa := ten_xoa || (k.ten || case when k.sdt <> '' then ' (' || k.sdt || ')' else '' end);
+  end loop;
+  if cardinality(xoa) > 0 then
+    perform bh.nhat_ky_(u, 'Xoá khách hàng', cardinality(xoa) || ' khách: ' || array_to_string(ten_xoa, '; '));
+  end if;
+  return jsonb_build_object('xoa', to_jsonb(xoa), 'boQua', to_jsonb(bo));
+end $$;
 create or replace function bh.v_luu_khach(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
 declare ten_ text := bh.chu(d->>'ten'); sdt_ text := regexp_replace(bh.chu(d->>'sdt'), '[^\d+]', '', 'g'); dia_chi_ text := bh.chu(d->>'diaChi');
   id_ int := bh.so(d->'id'); han_muc_ bigint := greatest(0, bh.so(d->'hanMuc')); k bh.khach_hang; trung text; no_ bigint;
@@ -802,7 +820,7 @@ end $$;
 create or replace function public.api(tk text, viec text, d jsonb default '{}') returns jsonb
 language plpgsql security definer set search_path = bh, pg_catalog, public, extensions as $$
 declare u bh.nhan_vien; ham text; kq jsonb; ma_ text; chi_doc boolean;
-  ds_viec constant jsonb := '{"khoiDong":"v_khoi_dong","luuHang":"v_luu_hang","luuKhach":"v_luu_khach","dieuChinhNo":"v_dieu_chinh_no",
+  ds_viec constant jsonb := '{"khoiDong":"v_khoi_dong","luuHang":"v_luu_hang","luuKhach":"v_luu_khach","xoaKhach":"v_xoa_khach","dieuChinhNo":"v_dieu_chinh_no",
     "chiTietKhach":"v_chi_tiet_khach","luuBan":"v_luu_ban","huyHoaDon":"v_huy_hoa_don","thuNo":"v_thu_no","huyThuNo":"v_huy_thu_no",
     "dsHoaDon":"v_ds_hoa_don","luuNhap":"v_luu_nhap","huyNhap":"v_huy_nhap","dsNhap":"v_ds_nhap","dsDoiTac":"v_ds_doi_tac",
     "xemDoiTac":"v_xem_doi_tac","luuDoiTac":"v_luu_doi_tac","traDoiTac":"v_tra_doi_tac","huyTraDoiTac":"v_huy_tra_doi_tac",

@@ -597,14 +597,15 @@ function inPhieu() { $('#vungIn').innerHTML = phieuHTML(S.tam.phieu); setTimeout
 function veKhach() {
   var tongNo = 0, soNo = 0; S.khach.forEach(function (k) { if (k.no > 0 && !k.ngung) { tongNo += k.no; soNo++; } });
   var bc = co('xemBaoCao');
-  S.tam.dsKH = null;
-  chinh('<div class="tieuDeTrang"><h2>Khách hàng</h2><button class="nut" onclick="xuatKhach()">⬇ Xuất Excel</button><button class="nut chinh" onclick="hopKhach(0)">+ Thêm khách</button></div>' +
+  S.tam.dsKH = null; S.tam.chonKH = null;
+  chinh('<div class="tieuDeTrang"><h2>Khách hàng</h2><button class="nut" onclick="xuatKhach()">⬇ Xuất Excel</button>' + (S.toi.laChu ? '<button class="nut" id="nutChonKH" onclick="batChonKH()">☑ Chọn để xoá</button>' : '') + '<button class="nut chinh" onclick="hopKhach(0)">+ Thêm khách</button></div>' +
     '<div class="luoi"><div class="oSo"><small>Tổng nợ phải thu</small><b class="doChu so">' + tien(tongNo) + '</b></div><div class="oSo"><small>Số khách đang nợ</small><b>' + soNo + ' / ' + S.khach.length + '</b></div></div>' +
     (bc ? khoangHTML('taiDSKhach').replace('<div class="the">', '<div class="the"><div class="dam" style="margin-bottom:6px">Doanh số tính trong khoảng</div>') : '') +
     '<div class="the"><input class="nhap" id="timKH" placeholder="Tìm theo tên, số ĐT, địa chỉ…" oninput="locKhach()">' +
     '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 2px 0"><label class="nho" style="display:flex;gap:6px;align-items:center">Sắp xếp<select id="xepKH" class="nhap" style="margin:0;width:auto;padding:6px 8px" onchange="locKhach()">' +
     (bc ? '<option value="mua">Mua nhiều nhất</option>' : '') + '<option value="no">Nợ nhiều nhất</option><option value="ten">Tên A → Z</option></select></label>' +
     '<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="chiNo" onchange="locKhach()" style="width:18px;height:18px"> Chỉ khách đang nợ</label></div>' +
+    '<div id="thanhChonKH" class="an" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;padding:8px;background:#fdecea;border-radius:8px"><b id="demChonKH" style="flex:1">Đã chọn 0</b><button class="nut" onclick="chonHetKH()">Chọn hết (đang lọc)</button><button class="nut" onclick="batChonKH()">Huỷ</button><button class="nut" style="background:#c0392b;color:#fff;border-color:#c0392b" onclick="hopXoaKH()">🗑 Xoá</button></div>' +
     '<div class="nho mo" id="tomKH" style="margin-top:8px"></div><ul class="ds" id="dsKH" style="margin-top:2px"></ul></div>');
   if (bc) { $('#kgChon').value = 'all'; doiKhoang(); taiDSKhach(); } else locKhach();
 }
@@ -625,10 +626,49 @@ function locKhach() {
   $('#tomKH').textContent = cho ? 'Đang tính doanh số…' : ds.length + ' khách' + (ds.length > 300 ? ' — hiện 300 khách đầu, gõ tên để tìm' : '');
   $('#dsKH').innerHTML = ds.slice(0, 300).map(function (k) {
     var o = m && m[k.id], ds2 = o ? o.mua - o.tra : 0;
-    return '<li onclick="hopChiTietKhach(' + k.id + ')"><div class="c1"><div class="dam">' + E(k.ten) + (k.ngung ? ' <span class="nhan xam">đã ẩn</span>' : '') + '</div><div class="nho mo">' + E(k.sdt) + (k.diaChi ? ' · ' + E(k.diaChi) : '') + '</div>' +
+    var chon = S.tam.chonKH, dc = chon && chon[k.id];
+    return '<li onclick="' + (chon ? 'chonKH(' + k.id + ')' : 'hopChiTietKhach(' + k.id + ')') + '"' + (dc ? ' style="background:#fdecea"' : '') + '>' +
+      (chon ? '<input type="checkbox" ' + (dc ? 'checked ' : '') + 'style="width:20px;height:20px;flex:none;pointer-events:none">' : '') + '<div class="c1"><div class="dam">' + E(k.ten) + (k.ngung ? ' <span class="nhan xam">đã ẩn</span>' : '') + '</div><div class="nho mo">' + E(k.sdt) + (k.diaChi ? ' · ' + E(k.diaChi) : '') + '</div>' +
       (m ? '<div class="nho">Mua: <b class="so">' + tien(ds2) + '</b>' + (o ? ' · ' + o.soDon + ' đơn' : '') + '</div>' : '') +
       '</div><div class="phai"><div class="so dam ' + (k.no > 0 ? 'doChu' : 'mo') + '">' + tien(k.no) + '</div><div class="nho mo">nợ</div>' + (k.hanMuc > 0 && k.no > k.hanMuc ? '<span class="nhan do">vượt hạn mức</span>' : '') + '</div></li>';
   }).join('') || '<li class="tinh mo">Không có khách nào.</li>';
+}
+function batChonKH() {
+  S.tam.chonKH = S.tam.chonKH ? null : {};
+  var b = $('#thanhChonKH'); b.classList.toggle('an', !S.tam.chonKH); b.style.display = S.tam.chonKH ? 'flex' : '';
+  $('#nutChonKH').textContent = S.tam.chonKH ? '✕ Thôi chọn' : '☑ Chọn để xoá';
+  demChonKH(); locKhach();
+}
+function chonKH(id) { var c = S.tam.chonKH; if (!c) return; if (c[id]) delete c[id]; else c[id] = 1; demChonKH(); locKhach(); }
+function chonHetKH() {
+  var c = S.tam.chonKH, ds = dsKhachDaLoc(); if (!c) return;
+  var het = ds.length && ds.every(function (k) { return c[k.id]; });
+  ds.forEach(function (k) { if (het) delete c[k.id]; else c[k.id] = 1; });
+  demChonKH(); locKhach();
+}
+function demChonKH() { var e = $('#demChonKH'); if (e) e.textContent = 'Đã chọn ' + Object.keys(S.tam.chonKH || {}).length + ' khách'; }
+function hopXoaKH() {
+  var ids = Object.keys(S.tam.chonKH || {}).map(Number), ks = ids.map(khachCua).filter(function (k) { return k; });
+  if (!ks.length) return bao('Chưa chọn khách nào.', true);
+  var no = ks.filter(function (k) { return k.no !== 0; }), duoc = ks.filter(function (k) { return k.no === 0; });
+  var dsTen = function (a) { return a.slice(0, 30).map(function (k) { return '<li class="tinh" style="padding:4px 2px">' + E(k.ten) + (k.sdt ? ' <span class="mo">· ' + E(k.sdt) + '</span>' : '') + (k.no ? ' <b class="doChu so">' + tien(k.no) + '</b>' : '') + '</li>'; }).join('') + (a.length > 30 ? '<li class="tinh mo">… và ' + (a.length - 30) + ' khách khác</li>' : ''); };
+  moHop('Xoá ' + duoc.length + ' khách',
+    (duoc.length ? '<p style="margin-top:0">Sẽ xoá vĩnh viễn <b>' + duoc.length + ' khách</b>:</p><ul class="ds" style="max-height:40vh;overflow:auto">' + dsTen(duoc) + '</ul>' +
+      '<p class="nho mo">Hoá đơn cũ của các khách này vẫn giữ nguyên (vẫn có tên khách) và vẫn tính trong báo cáo. Không khôi phục lại được.</p>' : '') +
+    (no.length ? '<div class="canhBao">Không xoá <b>' + no.length + ' khách còn nợ</b> (phải thu nợ hoặc chỉnh nợ về 0 trước):<ul class="ds">' + dsTen(no) + '</ul></div>' : ''),
+    duoc.length ? '<button class="nut" style="width:100%;background:#c0392b;color:#fff;border-color:#c0392b" onclick="xoaKH()">🗑 Xoá ' + duoc.length + ' khách</button>' : '<button class="nut" style="width:100%" onclick="dongHop()">Đóng</button>');
+  S.tam.idXoaKH = duoc.map(function (k) { return k.id; });
+}
+function xoaKH() {
+  var ids = S.tam.idXoaKH || []; if (!ids.length) return;
+  cho(true);
+  goi('xoaKhach', { ids: ids }).then(function (r) {
+    cho(false); dongHop();
+    var m = {}; r.xoa.forEach(function (id) { m[id] = 1; });
+    S.khach = S.khach.filter(function (k) { return !m[k.id]; });
+    bao('Đã xoá ' + r.xoa.length + ' khách' + (r.boQua.length ? ', bỏ qua ' + r.boQua.length + ' khách còn nợ' : '') + '.');
+    if (S.trang === 'khach') veKhach();
+  }).catch(function (e) { cho(false); loi(e); });
 }
 function moTaKhoang() {
   var c = $('#kgChon'); if (!c || c.value === 'all') return 'toàn bộ thời gian';
@@ -751,7 +791,7 @@ function huyGD(i) {
 }
 function suaHD(i) {
   var x = S.tam.ls[i];
-  G = gioMoi(x.loai); G.suaId = x.id; G.khId = x.khId; G.khCu = x.khId; G.deltaCu = x.conNo - x.noCu; G.giam = x.giamGia; G.tra = x.khId ? x.thanhToan : null;
+  G = gioMoi(x.loai); G.suaId = x.id; G.khId = x.khId && khachCua(x.khId) ? x.khId : 0; G.khCu = x.khId; G.deltaCu = x.conNo - x.noCu; G.giam = x.giamGia; G.tra = x.khId ? x.thanhToan : null;
   G.items = x.items.filter(function (it) { return hangCua(it.id); }).map(function (it) { return { id: it.id, sl: it.sl, gia: it.gia }; });
   dongHop(); di('ban');
 }
