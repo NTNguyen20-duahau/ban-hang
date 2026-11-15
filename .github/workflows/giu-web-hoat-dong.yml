@@ -1,0 +1,19 @@
+# Giữ cho cơ sở dữ liệu Supabase (gói miễn phí) không bị tạm dừng khi cửa hàng nghỉ lâu.
+# Cứ 3 ngày gửi 1 yêu cầu đọc nhẹ ("trangThai"), không đọc/ghi dữ liệu khách hàng.
+name: Giữ web hoạt động
+on:
+  schedule:
+    - cron: "17 1 */3 * *"   # 08:17 sáng (giờ VN), mỗi 3 ngày
+  workflow_dispatch: {}
+jobs:
+  diem-danh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gọi web
+        run: |
+          kq=$(curl -sS --max-time 60 -X POST "https://tqarsvymirhibestjrcw.supabase.co/rest/v1/rpc/api" \
+            -H "apikey: sb_publishable_edT_kiUdZX052r4XcTwB3w_ROGSeP7X" \
+            -H "Content-Type: application/json" \
+            -d '{"tk":"","viec":"trangThai","d":{}}')
+          echo "Kết quả: $kq"
+          echo "$kq" | grep -q '"ok": *true'
