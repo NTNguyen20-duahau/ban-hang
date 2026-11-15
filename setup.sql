@@ -52,6 +52,7 @@ create table if not exists bh.slc_hang (
 create index if not exists slc_hang_thang on bh.slc_hang (thang);
 
 alter table bh.hoa_don add column if not exists khong_tinh_bc boolean not null default false;
+alter table bh.khach_hang add column if not exists ds_cu bigint not null default 0;
 create index if not exists hoa_don_kh on bh.hoa_don (kh_id);
 create index if not exists hoa_don_tg on bh.hoa_don (thoi_gian);
 create index if not exists thu_no_kh on bh.thu_no (kh_id);
@@ -173,7 +174,7 @@ create or replace function bh.hh_cong(u bh.nhan_vien, p bh.hang_hoa) returns jso
     || case when bh.co(u, 'xemGiaNhap') then jsonb_build_object('giaNhap', p.gia_nhap) else '{}'::jsonb end $$;
 
 create or replace function bh.kh_cong(k bh.khach_hang) returns jsonb language sql stable as $$
-  select jsonb_build_object('id', k.id, 'ten', k.ten, 'sdt', k.sdt, 'diaChi', k.dia_chi, 'hanMuc', k.han_muc, 'no', k.no, 'ngung', k.ngung) $$;
+  select jsonb_build_object('id', k.id, 'ten', k.ten, 'sdt', k.sdt, 'diaChi', k.dia_chi, 'hanMuc', k.han_muc, 'no', k.no, 'ngung', k.ngung, 'dsCu', k.ds_cu) $$;
 
 create or replace function bh.hd_cong(u bh.nhan_vien, r bh.hoa_don) returns jsonb language sql stable as $$
   select jsonb_build_object('kieu', 'HD', 'id', r.id, 'loai', r.loai, 'thoiGian', r.thoi_gian, 'khId', r.kh_id, 'khTen', r.kh_ten, 'khSdt', r.kh_sdt,
@@ -673,19 +674,25 @@ end $$;
 
 /* ---------- Doanh số khách ---------- */
 create or replace function bh.v_doanh_so_khach(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql stable as $$
-declare xem boolean;
+declare xem boolean; cu boolean;
 begin
   perform bh.can(u, 'xemBaoCao');
   xem := bh.co(u, 'xemGiaNhap');
-  return jsonb_build_object('m', coalesce((select jsonb_object_agg(kh_id::text, o) from (
-    select r.kh_id, jsonb_build_object(
-      'soDon', count(*) filter (where r.loai <> 'TRA'),
-      'mua', coalesce(sum(r.tong - r.giam_gia) filter (where r.loai <> 'TRA'), 0),
+  /* doanh số phần mềm cũ (1/4/2026 – 14/11/2026) chỉ cộng khi khoảng xem bao trùm cả giai đoạn đó */
+  cu := (not bh.dung(d->'tu') or bh.so(d->'tu') <= 1774976400000) and (not bh.dung(d->'den') or bh.so(d->'den') >= 1794675599000);
+  return jsonb_build_object('cu', cu, 'm', coalesce((select jsonb_object_agg(kh_id::text, o) from (
+    select k.id kh_id, jsonb_build_object(
+      'soDon', count(r.id) filter (where r.loai <> 'TRA'),
+      'mua', coalesce(sum(r.tong - r.giam_gia) filter (where r.loai <> 'TRA'), 0) + case when cu then k.ds_cu else 0 end,
+      'cu', case when cu then k.ds_cu else 0 end,
       'tra', coalesce(sum(r.tong - r.giam_gia) filter (where r.loai = 'TRA'), 0),
       'cuoi', coalesce(max(r.thoi_gian) filter (where r.loai <> 'TRA'), 0))
       || case when xem then jsonb_build_object('lai', coalesce(sum((case when r.loai = 'TRA' then -1 else 1 end) * (-r.giam_gia +
            coalesce((select sum((bh.so(it->'gia') - bh.so(it->'von')) * bh.so(it->'sl')) from jsonb_array_elements(r.items) it), 0))), 0)) else '{}'::jsonb end o
-    from bh.hoa_don r where r.trang_thai = 'OK' and r.kh_id <> 0 and bh.trong(r.thoi_gian, d) group by r.kh_id) a), '{}'::jsonb));
+    from bh.khach_hang k
+    left join bh.hoa_don r on r.kh_id = k.id and r.trang_thai = 'OK' and bh.trong(r.thoi_gian, d) and not (cu and r.khong_tinh_bc)
+    group by k.id, k.ds_cu
+    having count(r.id) > 0 or (cu and k.ds_cu <> 0)) a), '{}'::jsonb));
 end $$;
 
 /* ---------- Kiểm kho ---------- */

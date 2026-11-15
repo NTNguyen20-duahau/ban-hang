@@ -615,7 +615,7 @@ function veKhach() {
 }
 function taiDSKhach() {
   S.tam.dsKH = null; locKhach();
-  goi('doanhSoKhach', khoang()).then(function (r) { if (S.trang !== 'khach') return; S.tam.dsKH = r.m; locKhach(); }).catch(loi);
+  goi('doanhSoKhach', khoang()).then(function (r) { if (S.trang !== 'khach') return; S.tam.dsKH = r.m; S.tam.dsCu = r.cu; locKhach(); }).catch(loi);
 }
 function dsKhachDaLoc() {
   var q = $('#timKH').value.trim(), chiNo = $('#chiNo').checked, xep = $('#xepKH').value, m = S.tam.dsKH || {};
@@ -627,13 +627,13 @@ function dsKhachDaLoc() {
 function locKhach() {
   var ds = dsKhachDaLoc(), m = S.tam.dsKH, xep = $('#xepKH').value;
   var cho = xep === 'mua' && !m;
-  $('#tomKH').textContent = cho ? 'Đang tính doanh số…' : ds.length + ' khách' + (ds.length > 300 ? ' — hiện 300 khách đầu, gõ tên để tìm' : '');
+  $('#tomKH').textContent = cho ? 'Đang tính doanh số…' : ds.length + ' khách' + (ds.length > 300 ? ' — hiện 300 khách đầu, gõ tên để tìm' : '') + (m && S.tam.dsCu ? ' · Doanh số đã gồm số liệu phần mềm cũ (4/2026 – 14/11/2026)' : '');
   $('#dsKH').innerHTML = ds.slice(0, 300).map(function (k) {
     var o = m && m[k.id], ds2 = o ? o.mua - o.tra : 0;
     var chon = S.tam.chonKH, dc = chon && chon[k.id];
     return '<li onclick="' + (chon ? 'chonKH(' + k.id + ')' : 'hopChiTietKhach(' + k.id + ')') + '"' + (dc ? ' style="background:#fdecea"' : '') + '>' +
       (chon ? '<input type="checkbox" ' + (dc ? 'checked ' : '') + 'style="width:20px;height:20px;flex:none;pointer-events:none">' : '') + '<div class="c1"><div class="dam">' + E(k.ten) + (k.ngung ? ' <span class="nhan xam">đã ẩn</span>' : '') + '</div><div class="nho mo">' + E(k.sdt) + (k.diaChi ? ' · ' + E(k.diaChi) : '') + '</div>' +
-      (m ? '<div class="nho">Mua: <b class="so">' + tien(ds2) + '</b>' + (o ? ' · ' + o.soDon + ' đơn' : '') + '</div>' : '') +
+      (m ? '<div class="nho">Mua: <b class="so">' + tien(ds2) + '</b>' + (o && o.soDon ? ' · ' + o.soDon + ' đơn web' : '') + (o && o.cu ? ' <span class="mo">(gồm ' + tien(o.cu) + ' phần mềm cũ)</span>' : '') + '</div>' : '') +
       '</div><div class="phai"><div class="so dam ' + (k.no > 0 ? 'doChu' : 'mo') + '">' + tien(k.no) + '</div><div class="nho mo">nợ</div>' + (k.hanMuc > 0 && k.no > k.hanMuc ? '<span class="nhan do">vượt hạn mức</span>' : '') + '</div></li>';
   }).join('') || '<li class="tinh mo">Không có khách nào.</li>';
 }
@@ -753,6 +753,7 @@ function hopChiTietKhach(id) {
   var k = khachCua(id);
   moHop(k.ten, '<div class="nho mo">' + E(k.sdt) + (k.diaChi ? ' · ' + E(k.diaChi) : '') + '</div>' +
     '<div class="luoi" style="margin:10px 0"><div class="oSo"><small>Đang nợ</small><b class="so ' + (k.no > 0 ? 'doChu' : '') + '">' + tien(k.no) + '</b></div><div class="oSo"><small>Hạn mức nợ</small><b class="so">' + (k.hanMuc ? tien(k.hanMuc) : 'Không đặt') + '</b></div></div>' +
+    (k.dsCu && co('xemBaoCao') ? '<div class="nho mo" style="margin:-4px 0 10px">Doanh số phần mềm cũ (4/2026 – 14/11/2026): <b class="so">' + tien(k.dsCu) + '</b></div>' : '') +
     '<div class="hangNut" style="margin-bottom:12px">' + (k.no > 0 ? '<button class="nut chinh" onclick="hopThuNo(' + id + ')">Thu nợ</button>' : '') + '<button class="nut" onclick="G=gioMoi(\'BAN\');G.khId=' + id + ';dongHop();di(\'ban\')">Bán hàng</button>' + '<button class="nut" onclick="hopKhach(' + id + ')">Sửa</button>' + (S.toi.laChu ? '<button class="nut" onclick="hopDieuChinhNo(' + id + ')">Chỉnh nợ</button>' : '') + '<button class="nut" onclick="xuatLichSuKhach(' + id + ')">⬇ Xuất file</button></div>' +
     '<div class="dam">Lịch sử mua và trả nợ</div><ul class="ds" id="lsKH"><li class="tinh mo">Đang tải…</li></ul>');
   S.tam.ls = null;
