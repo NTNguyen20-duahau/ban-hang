@@ -423,7 +423,8 @@ function goiYHang() {
 }
 function themVaoGio(id) {
   var p = hangCua(id), it = G.items.filter(function (x) { return x.id === id; })[0];
-  if (it) it.sl++; else G.items.push({ id: id, sl: 1, gia: p.giaBan });
+  G.dem = (G.dem || G.items.length) + 1;
+  if (it) { it.sl++; it.t = G.dem; } else G.items.push({ id: id, sl: 1, gia: p.giaBan, t: G.dem });
   $('#timHang').value = ''; $('#gyHang').innerHTML = ''; veGio();
   if (window.matchMedia('(min-width:900px)').matches) $('#timHang').focus();
 }
@@ -451,7 +452,10 @@ function khoiPhucNhapDo() {
 }
 function veGio() {
   var suaGia = co('suaGia');
-  $('#gio').innerHTML = G.items.map(function (it, i) {
+  /* hiển thị: mặt hàng chọn sau nằm trên; G.items giữ thứ tự chọn để in phiếu */
+  var thuTu = G.items.map(function (it, i) { return i; }).sort(function (a, b) { return (G.items[b].t || b) - (G.items[a].t || a) || b - a; });
+  $('#gio').innerHTML = thuTu.map(function (i) {
+    var it = G.items[i];
     var p = hangCua(it.id) || { ten: '?', ton: 0, donVi: '' };
     var thieu = G.loai === 'BAN' && it.sl > p.ton;
     return '<div class="dong"><div class="tenH"><span>' + E(p.ten) + ' <small class="' + (thieu ? 'doChu' : 'mo') + '" style="font-weight:400">(' + E(p.donVi) + ' · tồn ' + tien(p.ton) + (thieu ? ' — không đủ' : '') + ')</small></span><button onclick="G.items.splice(' + i + ',1);veGio()" aria-label="Bỏ mặt hàng này">×</button></div>' +
