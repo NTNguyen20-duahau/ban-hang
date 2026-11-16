@@ -406,7 +406,7 @@ function veOKhach() {
   var kh = G.khId ? khachCua(G.khId) : null, o = $('#oKhach');
   if (kh) {
     var vuot = kh.hanMuc > 0 && kh.no > kh.hanMuc;
-    o.innerHTML = '<div class="khChon"><div class="c1"><div class="dam">' + E(kh.ten) + '</div><div class="nho mo">' + E(kh.sdt) + (kh.diaChi ? ' · ' + E(kh.diaChi) : '') + '</div><div class="nho">Đang nợ: <b class="' + (kh.no > 0 ? 'doChu' : '') + '">' + tien(kh.no) + '</b>' + (kh.hanMuc > 0 ? ' · Hạn mức: ' + tien(kh.hanMuc) : '') + (vuot ? ' <span class="nhan do">Vượt hạn mức</span>' : '') + '</div></div><button class="nut nho" onclick="chonKhach(0)">Đổi</button></div>';
+    o.innerHTML = '<div class="khChon"><div class="c1"><div class="dam">' + E(kh.ten) + '</div>' + (kh.sdt ? '<div class="so" style="font-size:18px;font-weight:600;letter-spacing:.3px;margin:2px 0">' + E(kh.sdt) + '</div>' : '') + (kh.diaChi ? '<div class="nho mo">' + E(kh.diaChi) + '</div>' : '') + '<div class="nho">Đang nợ: <b class="' + (kh.no > 0 ? 'doChu' : '') + '">' + tien(kh.no) + '</b>' + (kh.hanMuc > 0 ? ' · Hạn mức: ' + tien(kh.hanMuc) : '') + (vuot ? ' <span class="nhan do">Vượt hạn mức</span>' : '') + '</div></div><button class="nut nho" onclick="chonKhach(0)">Đổi</button></div>';
   } else {
     o.innerHTML = '<div style="display:flex;gap:8px"><input class="nhap" style="margin:0" id="timKhach" placeholder="Khách lẻ — gõ tên hoặc số ĐT để chọn khách" autocomplete="off" oninput="goiYKhach()"><button class="nut" onclick="hopKhach(0,1)" title="Thêm khách mới">+ Mới</button></div><div id="gyKhach"></div>';
   }
