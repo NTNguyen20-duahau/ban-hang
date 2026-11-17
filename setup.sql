@@ -40,6 +40,10 @@ create table if not exists bh.phieu_nhap (
 create table if not exists bh.tra_doi_tac (
   id serial primary key, thoi_gian bigint not null, so_tien bigint not null default 0, nhan_vien text not null default '',
   trang_thai text not null default 'OK', ghi_chu text not null default '', dt_id int not null default 1, dt_ten text not null default 'TKA');
+create table if not exists bh.chi_phi (
+  id serial primary key, ngay bigint not null, loai text not null default 'Khác', so_tien bigint not null default 0,
+  ghi_chu text not null default '', nhan_vien text not null default '', tao_luc bigint not null default 0, sua_luc bigint not null default 0,
+  xoa boolean not null default false);
 create table if not exists bh.qua_lai (
   id serial primary key, thoi_gian bigint not null, dt_id int not null, dt_ten text not null default '',
   loai text not null, tong bigint not null default 0, items jsonb not null default '[]', chi_tiet text not null default '',
@@ -65,10 +69,14 @@ create index if not exists phieu_nhap_dt on bh.phieu_nhap (dt_id);
 create index if not exists phieu_nhap_tg on bh.phieu_nhap (thoi_gian);
 create index if not exists tra_dt on bh.tra_doi_tac (dt_id);
 create index if not exists qua_lai_dt on bh.qua_lai (dt_id, thoi_gian);
+create index if not exists chi_phi_ngay on bh.chi_phi (ngay);
+alter table bh.phieu_nhap add column if not exists tra_id int not null default 0;
+alter table bh.phieu_nhap add column if not exists sua_luc bigint not null default 0;
+alter table bh.tra_doi_tac add column if not exists nhap_id int not null default 0;
 create index if not exists nhat_ky_tg on bh.nhat_ky (thoi_gian);
 
 do $$ declare t text; begin
-  foreach t in array array['cai_dat','nhan_vien','phien','sai_dn','hang_hoa','khach_hang','hoa_don','thu_no','doi_tac','phieu_nhap','tra_doi_tac','kiem_kho','nhat_ky','ma_da_lam','slc_hang','qua_lai'] loop
+  foreach t in array array['cai_dat','nhan_vien','phien','sai_dn','hang_hoa','khach_hang','hoa_don','thu_no','doi_tac','phieu_nhap','tra_doi_tac','kiem_kho','nhat_ky','ma_da_lam','slc_hang','qua_lai','chi_phi'] loop
     execute format('alter table bh.%I enable row level security', t);
   end loop;
 end $$;
@@ -141,7 +149,7 @@ create or replace function bh.quyen_ds() returns jsonb language sql immutable as
   'xemGiaNhap','Xem giá nhập, lợi nhuận', 'xemBaoCao','Xem báo cáo doanh thu', 'suaGia','Sửa giá bán',
   'suaHang','Thêm / sửa / ẩn mặt hàng', 'nhapHang','Nhập hàng', 'kiemKho','Kiểm kho (sửa số tồn)',
   'suaHoaDon','Sửa / huỷ hoá đơn, phiếu thu', 'hanMuc','Đặt / sửa hạn mức nợ', 'vuotHanMuc','Cho khách mua vượt hạn mức',
-  'congNoTKA','Xem và ghi công nợ đối tác', 'chuyenHang','Chuyển hàng / sổ qua lại với cửa hàng khác') $$;
+  'congNoTKA','Xem và ghi công nợ đối tác', 'chuyenHang','Chuyển hàng / sổ qua lại với cửa hàng khác', 'chiPhi','Thêm, sửa, xem chi phí cửa hàng') $$;
 
 create or replace function bh.co(u bh.nhan_vien, q text) returns boolean language sql stable as
 $$ select u.la_chu or q = any(u.quyen) $$;
@@ -197,7 +205,9 @@ create or replace function bh.nhap_cong(u bh.nhan_vien, r bh.phieu_nhap) returns
     'items', case when bh.co(u, 'xemGiaNhap') then r.items
       else coalesce((select jsonb_agg(it - 'gia' - 'giaCu' order by n) from jsonb_array_elements(r.items) with ordinality a(it, n)), '[]'::jsonb) end,
     'dtId', coalesce(nullif(r.dt_id, 0), 1), 'dtTen', coalesce(nullif(r.dt_ten, ''), 'TKA'))
-    || case when bh.co(u, 'xemGiaNhap') then jsonb_build_object('tong', r.tong) else '{}'::jsonb end $$;
+    || jsonb_build_object('suaLuc', r.sua_luc)
+    || case when bh.co(u, 'xemGiaNhap') then jsonb_build_object('tong', r.tong,
+         'daTra', coalesce((select t.so_tien from bh.tra_doi_tac t where t.id = r.tra_id and r.tra_id <> 0 and t.trang_thai = 'OK'), 0)) else '{}'::jsonb end $$;
 
 create or replace function bh.dt_cong(r bh.doi_tac) returns jsonb language sql stable as $$
   select jsonb_build_object('id', r.id, 'ten', r.ten, 'sdt', r.sdt, 'diaChi', r.dia_chi, 'no', r.no, 'noKeToan', r.no_ke_toan, 'ngung', r.ngung) $$;
@@ -534,53 +544,101 @@ create or replace function bh.v_ds_hoa_don(u bh.nhan_vien, d jsonb) returns json
     'nhieuHon', (select count(*) from b) > 500) $$;
 
 /* ---------- Nhập hàng & công nợ đối tác ---------- */
+/* hoàn tác tác động của 1 phiếu nhập lên tồn kho + giá nhập (dùng khi huỷ / sửa) */
+create or replace function bh.hoan_nhap(r bh.phieu_nhap) returns void language plpgsql as $$
+declare it jsonb;
+begin
+  for it in select * from jsonb_array_elements(r.items) loop
+    update bh.hang_hoa set ton = ton - bh.so(it->'sl'),
+      gia_nhap = case when gia_nhap = bh.so(it->'gia') and bh.co_gt(it->'giaCu') then bh.so(it->'giaCu') else gia_nhap end
+      where id = bh.so(it->'id');
+  end loop;
+end $$;
+
 create or replace function bh.v_luu_nhap(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
 declare dt bh.doi_tac; p bh.hang_hoa; it jsonb; xem boolean := bh.co(u, 'xemGiaNhap'); ids int[] := '{}'; sls bigint[] := '{}'; gias bigint[] := '{}';
-  sl bigint; gia bigint; tong bigint := 0; items jsonb := '[]'; mo_ta text[] := '{}'; i int; r bh.phieu_nhap; hang jsonb := '[]';
+  sl bigint; gia bigint; tong_ bigint := 0; items_ jsonb := '[]'; mo_ta text[] := '{}'; i int; r bh.phieu_nhap; cu bh.phieu_nhap; hang jsonb := '[]';
+  sua_id int := bh.so(d->'suaId'); tra_cu bh.tra_doi_tac; da_tra bigint; da_tra_cu bigint := 0; cu_dt int; gia_cu_phieu jsonb := '{}';
 begin
   perform bh.can(u, 'nhapHang');
   select * into dt from bh.doi_tac where id = bh.so(d->'dtId');
   if not found then perform bh.loi('Chưa chọn đối tác (công ty giao hàng).'); end if;
   if jsonb_typeof(d->'items') is distinct from 'array' or jsonb_array_length(d->'items') = 0 then perform bh.loi('Chưa chọn mặt hàng nào.'); end if;
+  if sua_id <> 0 then
+    select * into cu from bh.phieu_nhap where id = sua_id for update;
+    if not found then perform bh.loi('Không tìm thấy phiếu nhập cần sửa.'); end if;
+    if cu.trang_thai <> 'OK' then perform bh.loi('Phiếu nhập này đã huỷ, không sửa được.'); end if;
+    cu_dt := coalesce(nullif(cu.dt_id, 0), 1);
+    select * into tra_cu from bh.tra_doi_tac where id = cu.tra_id and cu.tra_id <> 0;
+    if found and tra_cu.trang_thai = 'OK' then da_tra_cu := tra_cu.so_tien; end if;
+    select coalesce(jsonb_object_agg(x->>'id', x->'gia'), '{}') into gia_cu_phieu from jsonb_array_elements(cu.items) x;
+    /* trả lại như trước khi có phiếu cũ */
+    perform bh.hoan_nhap(cu);
+    update bh.doi_tac set no = no - cu.tong + da_tra_cu where id = cu_dt;
+  end if;
   for it in select * from jsonb_array_elements(d->'items') loop
     select * into p from bh.hang_hoa where id = bh.so(it->'id');
     if not found then perform bh.loi('Không tìm thấy mặt hàng (mã ' || coalesce(it->>'id', '') || ').'); end if;
     sl := bh.so(it->'sl');
     if sl <= 0 then perform bh.loi('Số lượng của "' || p.ten || '" phải lớn hơn 0.'); end if;
     if p.id = any(ids) then perform bh.loi('Mặt hàng "' || p.ten || '" bị lặp lại trong phiếu.'); end if;
-    gia := case when xem and bh.co_gt(it->'gia') then greatest(0, bh.so(it->'gia')) else p.gia_nhap end;
-    ids := ids || p.id; sls := sls || sl; gias := gias || gia; tong := tong + sl * gia;
+    gia := case when xem and bh.co_gt(it->'gia') then greatest(0, bh.so(it->'gia'))
+                when gia_cu_phieu ? p.id::text then bh.so(gia_cu_phieu->(p.id::text)) else p.gia_nhap end;
+    ids := ids || p.id; sls := sls || sl; gias := gias || gia; tong_ := tong_ + sl * gia;
   end loop;
+  /* thanh toán ngay khi nhập (chỉ người xem được giá nhập mới đổi được) */
+  da_tra := case when xem and bh.co_gt(d->'daTra') then bh.so(d->'daTra') else da_tra_cu end;
+  if da_tra < 0 then perform bh.loi('Số tiền trả không hợp lệ.'); end if;
+  if da_tra > tong_ then perform bh.loi('Số tiền trả (' || da_tra || ') lớn hơn tổng tiền phiếu nhập (' || tong_ || ').'); end if;
   for i in 1 .. array_length(ids, 1) loop
     select * into p from bh.hang_hoa where id = ids[i];
-    items := items || jsonb_build_array(jsonb_build_object('id', p.id, 'ten', p.ten, 'dv', p.don_vi, 'sl', sls[i], 'gia', gias[i], 'giaCu', p.gia_nhap));
+    items_ := items_ || jsonb_build_array(jsonb_build_object('id', p.id, 'ten', p.ten, 'dv', p.don_vi, 'sl', sls[i], 'gia', gias[i], 'giaCu', p.gia_nhap));
     mo_ta := mo_ta || (p.ten || ' x' || sls[i]);
-    update bh.hang_hoa set ton = ton + sls[i], gia_nhap = gias[i] where id = p.id returning * into p;
-    hang := hang || jsonb_build_array(bh.hh_cong(u, p));
+    update bh.hang_hoa set ton = ton + sls[i], gia_nhap = gias[i] where id = p.id;
   end loop;
-  insert into bh.phieu_nhap (thoi_gian, tong, nhan_vien, trang_thai, ghi_chu, chi_tiet, items, dt_id, dt_ten)
-    values (bh.bay_gio(), tong, u.ho_ten, 'OK', bh.chu(d->>'ghiChu'), array_to_string(mo_ta, '; '), items, dt.id, dt.ten) returning * into r;
-  update bh.doi_tac set no = no + tong where id = dt.id;
-  perform bh.nhat_ky_(u, 'Nhập hàng', '#' || r.id || ' (' || dt.ten || '): ' || r.chi_tiet);
+  if sua_id <> 0 then
+    update bh.phieu_nhap set tong = tong_, ghi_chu = bh.chu(d->>'ghiChu'), chi_tiet = array_to_string(mo_ta, '; '), items = items_,
+      dt_id = dt.id, dt_ten = dt.ten, sua_luc = bh.bay_gio() where id = sua_id returning * into r;
+  else
+    insert into bh.phieu_nhap (thoi_gian, tong, nhan_vien, trang_thai, ghi_chu, chi_tiet, items, dt_id, dt_ten)
+      values (bh.bay_gio(), tong_, u.ho_ten, 'OK', bh.chu(d->>'ghiChu'), array_to_string(mo_ta, '; '), items_, dt.id, dt.ten) returning * into r;
+  end if;
+  update bh.doi_tac set no = no + tong_ - da_tra where id = dt.id;
+  /* phiếu trả tiền đi kèm */
+  if r.tra_id <> 0 and exists (select 1 from bh.tra_doi_tac where id = r.tra_id) then
+    update bh.tra_doi_tac set so_tien = case when da_tra > 0 then da_tra else so_tien end, trang_thai = case when da_tra > 0 then 'OK' else 'HUY' end,
+      dt_id = dt.id, dt_ten = dt.ten where id = r.tra_id;
+  elsif da_tra > 0 then
+    insert into bh.tra_doi_tac (thoi_gian, so_tien, nhan_vien, trang_thai, ghi_chu, dt_id, dt_ten, nhap_id)
+      values (r.thoi_gian, da_tra, u.ho_ten, 'OK', 'Trả khi nhập phiếu #' || r.id, dt.id, dt.ten, r.id) returning id into i;
+    update bh.phieu_nhap set tra_id = i where id = r.id returning * into r;
+  end if;
+  if sua_id <> 0 then
+    perform bh.nhat_ky_(u, 'Sửa phiếu nhập', '#' || r.id || ' (' || dt.ten || ') TRƯỚC: ' || cu.chi_tiet || ' = ' || cu.tong || ', đã trả ' || da_tra_cu
+      || ' → SAU: ' || r.chi_tiet || ' = ' || r.tong || ', đã trả ' || da_tra);
+  else
+    perform bh.nhat_ky_(u, 'Nhập hàng', '#' || r.id || ' (' || dt.ten || '): ' || r.chi_tiet || case when da_tra > 0 then ' — trả ngay ' || da_tra else '' end);
+  end if;
+  select coalesce(jsonb_agg(bh.hh_cong(u, h)), '[]') into hang from bh.hang_hoa h
+    where h.id = any(ids) or h.id in (select bh.so(x->'id') from jsonb_array_elements(coalesce(cu.items, '[]')) x);
   return jsonb_build_object('phieu', bh.nhap_cong(u, r), 'hang', hang);
 end $$;
 
 create or replace function bh.v_huy_nhap(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
-declare r bh.phieu_nhap; it jsonb; p bh.hang_hoa; hang jsonb := '[]';
+declare r bh.phieu_nhap; hang jsonb := '[]'; t bh.tra_doi_tac; da_tra bigint := 0;
 begin
   perform bh.can(u, 'nhapHang');
   select * into r from bh.phieu_nhap where id = bh.so(d->'id');
   if not found then perform bh.loi('Không tìm thấy phiếu nhập.'); end if;
   if r.trang_thai <> 'OK' then perform bh.loi('Phiếu nhập này đã huỷ rồi.'); end if;
-  for it in select * from jsonb_array_elements(r.items) loop
-    update bh.hang_hoa set ton = ton - bh.so(it->'sl'),
-      gia_nhap = case when gia_nhap = bh.so(it->'gia') and bh.co_gt(it->'giaCu') then bh.so(it->'giaCu') else gia_nhap end
-      where id = bh.so(it->'id') returning * into p;
-    if found then hang := hang || jsonb_build_array(bh.hh_cong(u, p)); end if;
-  end loop;
+  perform bh.hoan_nhap(r);
+  select coalesce(jsonb_agg(bh.hh_cong(u, h)), '[]') into hang from bh.hang_hoa h where h.id in (select bh.so(x->'id') from jsonb_array_elements(r.items) x);
+  select * into t from bh.tra_doi_tac where id = r.tra_id and r.tra_id <> 0;
+  if found and t.trang_thai = 'OK' then da_tra := t.so_tien; update bh.tra_doi_tac set trang_thai = 'HUY' where id = t.id; end if;
   update bh.phieu_nhap set trang_thai = 'HUY' where id = r.id;
-  update bh.doi_tac set no = no - r.tong where id = coalesce(nullif(r.dt_id, 0), 1);
-  perform bh.nhat_ky_(u, 'Huỷ phiếu nhập', '#' || r.id || ' (' || coalesce(nullif(r.dt_ten, ''), 'TKA') || '): ' || r.chi_tiet);
+  update bh.doi_tac set no = no - r.tong + da_tra where id = coalesce(nullif(r.dt_id, 0), 1);
+  perform bh.nhat_ky_(u, 'Huỷ phiếu nhập', '#' || r.id || ' (' || coalesce(nullif(r.dt_ten, ''), 'TKA') || '): ' || r.chi_tiet
+    || case when da_tra > 0 then ' — huỷ kèm phiếu trả tiền ' || da_tra else '' end);
   return jsonb_build_object('hang', hang);
 end $$;
 
@@ -740,8 +798,58 @@ begin
   into kq;
   kq := kq || jsonb_build_object('cu', (select jsonb_build_object('thang', jsonb_agg(distinct thang), 'doanhThu', sum(doanh_thu), 'loiNhuan', sum(doanh_thu - von))
     from bh.slc_hang where (not bh.dung(d->'tu') or den >= bh.so(d->'tu')) and (not bh.dung(d->'den') or tu <= bh.so(d->'den')) having count(*) > 0));
+  kq := kq || jsonb_build_object('chiPhi', coalesce((select sum(so_tien) from bh.chi_phi where not xoa and bh.trong(ngay, d)), 0),
+    'chiPhiLoai', coalesce((select jsonb_agg(jsonb_build_object('loai', loai, 'tien', t) order by t desc) from (
+      select loai, sum(so_tien) t from bh.chi_phi where not xoa and bh.trong(ngay, d) group by loai) a), '[]'::jsonb));
+  if not (bh.co(u, 'xemGiaNhap') and bh.co(u, 'chiPhi')) then kq := kq - 'chiPhi' - 'chiPhiLoai'; end if;
   if not bh.co(u, 'xemGiaNhap') then kq := kq - 'loiNhuan' - 'thieuGiaVon'; if jsonb_typeof(kq->'cu') = 'object' then kq := jsonb_set(kq, '{cu}', (kq->'cu') - 'loiNhuan'); end if; end if;
   return kq;
+end $$;
+
+
+/* ---------- Chi phí cửa hàng ---------- */
+create or replace function bh.cp_cong(r bh.chi_phi) returns jsonb language sql stable as $$
+  select jsonb_build_object('id', r.id, 'ngay', r.ngay, 'loai', r.loai, 'soTien', r.so_tien, 'ghiChu', r.ghi_chu, 'nhanVien', r.nhan_vien,
+    'taoLuc', r.tao_luc, 'suaLuc', r.sua_luc) $$;
+
+create or replace function bh.v_ds_chi_phi(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql stable as $$
+begin
+  perform bh.can(u, 'chiPhi');
+  return jsonb_build_object(
+    'ds', coalesce((select jsonb_agg(bh.cp_cong(r) order by r.ngay desc, r.id desc) from bh.chi_phi r where not r.xoa and bh.trong(r.ngay, d)), '[]'::jsonb),
+    'theoLoai', coalesce((select jsonb_agg(jsonb_build_object('loai', loai, 'tien', t) order by t desc) from (
+      select loai, sum(so_tien) t from bh.chi_phi where not xoa and bh.trong(ngay, d) group by loai) a), '[]'::jsonb),
+    'loaiDaDung', coalesce((select jsonb_agg(loai order by n desc) from (select loai, count(*) n from bh.chi_phi where not xoa group by loai) a), '[]'::jsonb));
+end $$;
+
+create or replace function bh.v_luu_chi_phi(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
+declare id_ int := bh.so(d->'id'); cu bh.chi_phi; r bh.chi_phi; ngay_ bigint := bh.so(d->'ngay'); loai_ text := bh.chu(d->>'loai'); tien_ bigint := bh.so(d->'soTien');
+begin
+  perform bh.can(u, 'chiPhi');
+  if ngay_ <= 0 then perform bh.loi('Chưa chọn ngày.'); end if;
+  if loai_ = '' then perform bh.loi('Chưa chọn loại chi phí.'); end if;
+  if tien_ <= 0 then perform bh.loi('Số tiền phải lớn hơn 0.'); end if;
+  if id_ <> 0 then
+    select * into cu from bh.chi_phi where id = id_ and not xoa;
+    if not found then perform bh.loi('Không tìm thấy khoản chi phí.'); end if;
+    update bh.chi_phi set ngay = ngay_, loai = loai_, so_tien = tien_, ghi_chu = bh.chu(d->>'ghiChu'), sua_luc = bh.bay_gio() where id = id_ returning * into r;
+    perform bh.nhat_ky_(u, 'Sửa chi phí', '#' || r.id || ' TRƯỚC: ' || cu.loai || ' ' || cu.so_tien || ' (' || to_char(to_timestamp(cu.ngay / 1000) at time zone 'Asia/Ho_Chi_Minh', 'DD/MM/YYYY') || ') '
+      || cu.ghi_chu || ' → SAU: ' || r.loai || ' ' || r.so_tien || ' (' || to_char(to_timestamp(r.ngay / 1000) at time zone 'Asia/Ho_Chi_Minh', 'DD/MM/YYYY') || ') ' || r.ghi_chu);
+  else
+    insert into bh.chi_phi (ngay, loai, so_tien, ghi_chu, nhan_vien, tao_luc) values (ngay_, loai_, tien_, bh.chu(d->>'ghiChu'), u.ho_ten, bh.bay_gio()) returning * into r;
+    perform bh.nhat_ky_(u, 'Thêm chi phí', '#' || r.id || ' ' || r.loai || ' ' || r.so_tien || ' (' || to_char(to_timestamp(r.ngay / 1000) at time zone 'Asia/Ho_Chi_Minh', 'DD/MM/YYYY') || ') ' || r.ghi_chu);
+  end if;
+  return jsonb_build_object('cp', bh.cp_cong(r));
+end $$;
+
+create or replace function bh.v_xoa_chi_phi(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
+declare r bh.chi_phi;
+begin
+  perform bh.can(u, 'chiPhi');
+  update bh.chi_phi set xoa = true, sua_luc = bh.bay_gio() where id = bh.so(d->'id') and not xoa returning * into r;
+  if not found then perform bh.loi('Không tìm thấy khoản chi phí.'); end if;
+  perform bh.nhat_ky_(u, 'Xoá chi phí', '#' || r.id || ' ' || r.loai || ' ' || r.so_tien || ' (' || to_char(to_timestamp(r.ngay / 1000) at time zone 'Asia/Ho_Chi_Minh', 'DD/MM/YYYY') || ') ' || r.ghi_chu);
+  return '{}'::jsonb;
 end $$;
 
 /* ---------- Số liệu cũ ---------- */
@@ -938,9 +1046,9 @@ declare u bh.nhan_vien; ham text; kq jsonb; ma_ text; chi_doc boolean;
     "dsHoaDon":"v_ds_hoa_don","luuNhap":"v_luu_nhap","huyNhap":"v_huy_nhap","dsNhap":"v_ds_nhap","dsDoiTac":"v_ds_doi_tac",
     "xemDoiTac":"v_xem_doi_tac","luuDoiTac":"v_luu_doi_tac","traDoiTac":"v_tra_doi_tac","huyTraDoiTac":"v_huy_tra_doi_tac",
     "datDoiTac":"v_dat_doi_tac","doanhSoKhach":"v_doanh_so_khach","kiemKho":"v_kiem_kho","baoCao":"v_bao_cao","dsNV":"v_ds_nv",
-    "luuNV":"v_luu_nv","soLieuCu":"v_so_lieu_cu","doiMatKhau":"v_doi_mat_khau","luuCaiDat":"v_luu_cai_dat","nhatKy":"v_nhat_ky","luuQuaLai":"v_luu_qua_lai","huyQuaLai":"v_huy_qua_lai","soQuaLai":"v_so_qua_lai"}';
-  ds_chi_doc constant text[] := array['khoiDong','chiTietKhach','dsHoaDon','dsNhap','dsDoiTac','xemDoiTac','doanhSoKhach','baoCao','dsNV','nhatKy','soLieuCu','soQuaLai'];
-  ds_ma constant text[] := array['luuBan','thuNo','luuNhap','traDoiTac','luuQuaLai'];
+    "luuNV":"v_luu_nv","soLieuCu":"v_so_lieu_cu","doiMatKhau":"v_doi_mat_khau","luuCaiDat":"v_luu_cai_dat","nhatKy":"v_nhat_ky","luuQuaLai":"v_luu_qua_lai","huyQuaLai":"v_huy_qua_lai","soQuaLai":"v_so_qua_lai","dsChiPhi":"v_ds_chi_phi","luuChiPhi":"v_luu_chi_phi","xoaChiPhi":"v_xoa_chi_phi"}';
+  ds_chi_doc constant text[] := array['khoiDong','chiTietKhach','dsHoaDon','dsNhap','dsDoiTac','xemDoiTac','doanhSoKhach','baoCao','dsNV','nhatKy','soLieuCu','soQuaLai','dsChiPhi'];
+  ds_ma constant text[] := array['luuBan','thuNo','luuNhap','traDoiTac','luuQuaLai','luuChiPhi'];
 begin
   d := coalesce(d, '{}');
   if jsonb_typeof(d) <> 'object' then d := '{}'; end if;
