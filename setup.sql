@@ -70,6 +70,7 @@ create index if not exists phieu_nhap_tg on bh.phieu_nhap (thoi_gian);
 create index if not exists tra_dt on bh.tra_doi_tac (dt_id);
 create index if not exists qua_lai_dt on bh.qua_lai (dt_id, thoi_gian);
 create index if not exists chi_phi_ngay on bh.chi_phi (ngay);
+alter table bh.qua_lai add column if not exists sua_luc bigint not null default 0;
 alter table bh.phieu_nhap add column if not exists tra_id int not null default 0;
 alter table bh.phieu_nhap add column if not exists sua_luc bigint not null default 0;
 alter table bh.tra_doi_tac add column if not exists nhap_id int not null default 0;
@@ -942,12 +943,34 @@ end $$;
 create or replace function bh.ql_dau(loai text) returns int language sql immutable as $$
   select case when loai in ('NHAN_HANG','NHAN_TIEN') then 1 else -1 end $$;
 
+create or replace function bh.hoan_qua_lai(r bh.qua_lai) returns void language plpgsql as $$
+declare it jsonb;
+begin
+  for it in select * from jsonb_array_elements(r.items) loop
+    if r.loai = 'NHAN_HANG' then
+      update bh.hang_hoa set ton = ton - bh.so(it->'sl'),
+        gia_nhap = case when gia_nhap = bh.so(it->'gia') and bh.co_gt(it->'giaCu') then bh.so(it->'giaCu') else gia_nhap end
+        where id = bh.so(it->'id');
+    else
+      update bh.hang_hoa set ton = ton + bh.so(it->'sl') where id = bh.so(it->'id');
+    end if;
+  end loop;
+  update bh.doi_tac set no = no - bh.ql_dau(r.loai) * r.tong where id = r.dt_id;
+end $$;
+
 create or replace function bh.v_luu_qua_lai(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
 declare dt bh.doi_tac; p bh.hang_hoa; it jsonb; loai_ text := bh.chu(d->>'loai'); hang_ boolean; ids int[] := '{}'; sls bigint[] := '{}'; gias bigint[] := '{}';
   sl bigint; gia bigint; tong_ bigint := 0; items_ jsonb := '[]'; mo_ta text[] := '{}'; i int; r bh.qua_lai; hang jsonb := '[]';
-  ten_loai text;
+  ten_loai text; sua_id int := bh.so(d->'suaId'); cu bh.qua_lai;
 begin
   perform bh.can(u, 'chuyenHang');
+  if sua_id <> 0 then
+    select * into cu from bh.qua_lai where id = sua_id for update;
+    if not found then perform bh.loi('Không tìm thấy phiếu cần sửa.'); end if;
+    if cu.trang_thai <> 'OK' then perform bh.loi('Phiếu này đã huỷ, không sửa được.'); end if;
+    loai_ := cu.loai;
+    perform bh.hoan_qua_lai(cu);
+  end if;
   if loai_ not in ('CHUYEN_HANG','NHAN_HANG','NHAN_TIEN','DUA_TIEN') then perform bh.loi('Loại phiếu không hợp lệ.'); end if;
   hang_ := loai_ in ('CHUYEN_HANG','NHAN_HANG');
   ten_loai := case loai_ when 'CHUYEN_HANG' then 'Chuyển hàng' when 'NHAN_HANG' then 'Nhận hàng' when 'NHAN_TIEN' then 'Nhận tiền' else 'Đưa tiền' end;
@@ -969,42 +992,44 @@ begin
       items_ := items_ || jsonb_build_array(jsonb_build_object('id', p.id, 'ten', p.ten, 'dv', p.don_vi, 'sl', sls[i], 'gia', gias[i], 'giaCu', p.gia_nhap));
       mo_ta := mo_ta || (p.ten || ' x' || sls[i]);
       if loai_ = 'NHAN_HANG' then
-        update bh.hang_hoa set ton = ton + sls[i], gia_nhap = case when gias[i] > 0 then gias[i] else gia_nhap end where id = p.id returning * into p;
+        update bh.hang_hoa set ton = ton + sls[i], gia_nhap = case when gias[i] > 0 then gias[i] else gia_nhap end where id = p.id;
       else
-        update bh.hang_hoa set ton = ton - sls[i] where id = p.id returning * into p;
+        update bh.hang_hoa set ton = ton - sls[i] where id = p.id;
       end if;
-      hang := hang || jsonb_build_array(bh.hh_cong(u, p));
     end loop;
   else
     tong_ := bh.so(d->'soTien');
     if tong_ <= 0 then perform bh.loi('Số tiền phải lớn hơn 0.'); end if;
   end if;
-  insert into bh.qua_lai (thoi_gian, dt_id, dt_ten, loai, tong, items, chi_tiet, ghi_chu, nhan_vien)
-    values (bh.bay_gio(), dt.id, dt.ten, loai_, tong_, items_, array_to_string(mo_ta, '; '), bh.chu(d->>'ghiChu'), u.ho_ten) returning * into r;
+  if sua_id <> 0 then
+    update bh.qua_lai set dt_id = dt.id, dt_ten = dt.ten, tong = tong_, items = items_, chi_tiet = array_to_string(mo_ta, '; '),
+      ghi_chu = bh.chu(d->>'ghiChu'), sua_luc = bh.bay_gio() where id = sua_id returning * into r;
+  else
+    insert into bh.qua_lai (thoi_gian, dt_id, dt_ten, loai, tong, items, chi_tiet, ghi_chu, nhan_vien)
+      values (bh.bay_gio(), dt.id, dt.ten, loai_, tong_, items_, array_to_string(mo_ta, '; '), bh.chu(d->>'ghiChu'), u.ho_ten) returning * into r;
+  end if;
   update bh.doi_tac set no = no + bh.ql_dau(loai_) * tong_ where id = dt.id;
-  perform bh.nhat_ky_(u, ten_loai || ' (sổ qua lại)', '#' || r.id || ' ' || dt.ten || ': ' || coalesce(nullif(r.chi_tiet, ''), r.tong::text) || case when r.ghi_chu <> '' then ' — ' || r.ghi_chu else '' end);
+  if sua_id <> 0 then
+    perform bh.nhat_ky_(u, 'Sửa phiếu ' || lower(ten_loai) || ' (sổ qua lại)', '#' || r.id || ' ' || dt.ten || ' TRƯỚC: ' || coalesce(nullif(cu.chi_tiet, ''), '') || ' = ' || cu.tong
+      || ' → SAU: ' || coalesce(nullif(r.chi_tiet, ''), '') || ' = ' || r.tong);
+  else
+    perform bh.nhat_ky_(u, ten_loai || ' (sổ qua lại)', '#' || r.id || ' ' || dt.ten || ': ' || coalesce(nullif(r.chi_tiet, ''), r.tong::text) || case when r.ghi_chu <> '' then ' — ' || r.ghi_chu else '' end);
+  end if;
+  select coalesce(jsonb_agg(bh.hh_cong(u, h)), '[]') into hang from bh.hang_hoa h
+    where h.id = any(ids) or h.id in (select bh.so(x->'id') from jsonb_array_elements(coalesce(cu.items, '[]')) x);
   return bh.v_so_qua_lai(u, jsonb_build_object('dtId', dt.id)) || jsonb_build_object('hang', hang, 'moiId', r.id);
 end $$;
 
 create or replace function bh.v_huy_qua_lai(u bh.nhan_vien, d jsonb) returns jsonb language plpgsql as $$
-declare r bh.qua_lai; it jsonb; p bh.hang_hoa; hang jsonb := '[]';
+declare r bh.qua_lai; hang jsonb;
 begin
   perform bh.can(u, 'chuyenHang');
-  select * into r from bh.qua_lai where id = bh.so(d->'id');
+  select * into r from bh.qua_lai where id = bh.so(d->'id') for update;
   if not found then perform bh.loi('Không tìm thấy phiếu.'); end if;
   if r.trang_thai <> 'OK' then perform bh.loi('Phiếu này đã huỷ rồi.'); end if;
-  for it in select * from jsonb_array_elements(r.items) loop
-    if r.loai = 'NHAN_HANG' then
-      update bh.hang_hoa set ton = ton - bh.so(it->'sl'),
-        gia_nhap = case when gia_nhap = bh.so(it->'gia') and bh.co_gt(it->'giaCu') then bh.so(it->'giaCu') else gia_nhap end
-        where id = bh.so(it->'id') returning * into p;
-    else
-      update bh.hang_hoa set ton = ton + bh.so(it->'sl') where id = bh.so(it->'id') returning * into p;
-    end if;
-    if found then hang := hang || jsonb_build_array(bh.hh_cong(u, p)); end if;
-  end loop;
+  perform bh.hoan_qua_lai(r);
   update bh.qua_lai set trang_thai = 'HUY' where id = r.id;
-  update bh.doi_tac set no = no - bh.ql_dau(r.loai) * r.tong where id = r.dt_id;
+  select coalesce(jsonb_agg(bh.hh_cong(u, h)), '[]') into hang from bh.hang_hoa h where h.id in (select bh.so(x->'id') from jsonb_array_elements(r.items) x);
   perform bh.nhat_ky_(u, 'Huỷ phiếu sổ qua lại', '#' || r.id || ' ' || r.dt_ten || ': ' || coalesce(nullif(r.chi_tiet, ''), r.tong::text)
     || case when bh.chu(d->>'lyDo') <> '' then ' — lý do: ' || bh.chu(d->>'lyDo') else '' end);
   return bh.v_so_qua_lai(u, jsonb_build_object('dtId', r.dt_id)) || jsonb_build_object('hang', hang);
@@ -1020,7 +1045,7 @@ begin
     select jsonb_agg(o || jsonb_build_object('soDuSau', dt.no - coalesce(sau, 0)) order by t desc, k desc) from (
       select o, t, k, sum(e) over (order by t desc, k desc rows between unbounded preceding and 1 preceding) sau from (
         select jsonb_build_object('kieu', 'QL', 'id', r.id, 'loai', r.loai, 'thoiGian', r.thoi_gian, 'tong', r.tong, 'items', r.items, 'chiTiet', r.chi_tiet,
-                 'ghiChu', r.ghi_chu, 'nhanVien', r.nhan_vien, 'trangThai', r.trang_thai, 'e', case when r.trang_thai = 'OK' then bh.ql_dau(r.loai) * r.tong else 0 end) o,
+                 'ghiChu', r.ghi_chu, 'nhanVien', r.nhan_vien, 'trangThai', r.trang_thai, 'suaLuc', r.sua_luc, 'e', case when r.trang_thai = 'OK' then bh.ql_dau(r.loai) * r.tong else 0 end) o,
                r.thoi_gian t, 'q' || lpad(r.id::text, 10, '0') k, case when r.trang_thai = 'OK' then bh.ql_dau(r.loai) * r.tong else 0 end e
           from bh.qua_lai r where r.dt_id = dt.id
         union all

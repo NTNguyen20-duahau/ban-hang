@@ -997,9 +997,10 @@ function soDuNgan(no) { return no < 0 ? 'họ nợ mình ' + tien(-no) : no > 0 
 function veQL() {
   var ds = S.doiTac.filter(function (x) { return !x.ngung; });
   if (!Q.dtId || !ds.some(function (x) { return x.id === Q.dtId; })) Q.dtId = (ds.filter(function (x) { return x.id !== 1; })[0] || ds[0] || {}).id || 0;
-  var nutLoai = ['CHUYEN_HANG', 'NHAN_HANG', 'NHAN_TIEN', 'DUA_TIEN'].map(function (l) { return '<button class="nut' + (Q.loai === l ? ' chinh' : '') + '" onclick="doiLoaiQL(\'' + l + '\')">' + QL_LOAI[l].nut + '</button>'; }).join('');
+  var nutLoai = (Q.suaId ? [Q.loai] : ['CHUYEN_HANG', 'NHAN_HANG', 'NHAN_TIEN', 'DUA_TIEN']).map(function (l) { return '<button class="nut' + (Q.loai === l ? ' chinh' : '') + '" onclick="doiLoaiQL(\'' + l + '\')">' + QL_LOAI[l].nut + '</button>'; }).join('');
   chinh('<div class="tieuDeTrang"><h2>Chuyển hàng qua lại</h2><button class="nut" onclick="hopSuaDT(0)">+ Thêm cửa hàng</button></div>' +
-    (ds.length ? '<div class="the"><label class="o">Cửa hàng<select id="qlDT" onchange="Q.dtId=+this.value;Q.items=[];veQL()">' + ds.map(function (x) { return '<option value="' + x.id + '"' + (x.id === Q.dtId ? ' selected' : '') + '>' + E(x.ten) + '</option>'; }).join('') + '</select></label>' +
+    (ds.length ? (Q.suaId ? '<div class="canhBao">Đang sửa phiếu ' + QL_LOAI[Q.loai].ten.toLowerCase() + ' #' + Q.suaId + '. Lưu lại thì tồn kho và số dư được tính lại theo phiếu mới. <button class="nut nho" onclick="boSuaQL()">Bỏ sửa</button></div>' : '') +
+      '<div class="the"><label class="o">Cửa hàng<select id="qlDT"' + (Q.suaId ? ' disabled' : '') + ' onchange="Q.dtId=+this.value;Q.items=[];veQL()">' + ds.map(function (x) { return '<option value="' + x.id + '"' + (x.id === Q.dtId ? ' selected' : '') + '>' + E(x.ten) + '</option>'; }).join('') + '</select></label>' +
       '<div id="soDuQL" class="dam" style="font-size:17px;margin:4px 0 12px">…</div>' +
       '<div class="hangNut" style="flex-wrap:wrap;margin-bottom:12px">' + nutLoai + '</div><div id="formQL"></div></div>' +
       '<div class="the"><div class="tieuDeTrang" style="margin:0 0 6px"><div class="dam">Sổ qua lại</div><button class="nut nho" onclick="xuatQL()">⬇ Xuất Excel</button></div><ul class="ds" id="soQL"><li class="tinh mo">Đang tải…</li></ul></div>' +
@@ -1021,11 +1022,11 @@ function veFormQL() {
   var L = QL_LOAI[Q.loai], o = $('#formQL'); if (!o) return;
   if (L.hang) {
     o.innerHTML = '<input class="nhap" id="timQL" placeholder="Gõ tên hàng để ' + (Q.loai === 'CHUYEN_HANG' ? 'chuyển đi' : 'nhận về') + '…" autocomplete="off" oninput="goiYQL()"><div id="gyQL"></div><div id="gioQL"></div>' +
-      '<label class="o" style="margin-top:10px">Ghi chú<input id="qlGC"></label><button class="nut chinh" style="width:100%" onclick="luuQL()">Lưu phiếu ' + L.ten.toLowerCase() + '</button>';
+      '<label class="o" style="margin-top:10px">Ghi chú<input id="qlGC" value="' + E(Q.ghiChu || '') + '" oninput="Q.ghiChu=this.value"></label><button class="nut chinh" style="width:100%" onclick="luuQL()">' + nutLuuQL(L) + '</button>';
     veGioQL();
   } else {
-    o.innerHTML = '<label class="o">Số tiền ' + (Q.loai === 'NHAN_TIEN' ? 'nhận từ cửa hàng kia (mình mượn, hoặc họ trả nợ)' : 'đưa cho cửa hàng kia (mình trả nợ, hoặc cho mượn)') + '<input id="qlTien" inputmode="numeric" oninput="dinhDang(this)" style="font-size:20px"></label>' +
-      '<label class="o">Ghi chú<input id="qlGC" placeholder="Ví dụ: mượn tiền nhập hàng, trả tiền hàng tuần trước…"></label><button class="nut chinh" style="width:100%" onclick="luuQL()">Lưu phiếu ' + L.ten.toLowerCase() + '</button>';
+    o.innerHTML = '<label class="o">Số tiền ' + (Q.loai === 'NHAN_TIEN' ? 'nhận từ cửa hàng kia (mình mượn, hoặc họ trả nợ)' : 'đưa cho cửa hàng kia (mình trả nợ, hoặc cho mượn)') + '<input id="qlTien" inputmode="numeric" oninput="dinhDang(this)" style="font-size:20px" value="' + (Q.soTien ? tien(Q.soTien) : '') + '"></label>' +
+      '<label class="o">Ghi chú<input id="qlGC" value="' + E(Q.ghiChu || '') + '" oninput="Q.ghiChu=this.value" placeholder="Ví dụ: mượn tiền nhập hàng, trả tiền hàng tuần trước…"></label><button class="nut chinh" style="width:100%" onclick="luuQL()">' + nutLuuQL(L) + '</button>';
   }
 }
 function goiYQL() {
@@ -1045,7 +1046,7 @@ function veGioQL() {
   var thuTu = Q.items.map(function (x, i) { return i; }).sort(function (a, b) { return (Q.items[b].t || b) - (Q.items[a].t || a) || b - a; });
   var h = thuTu.map(function (i) {
     var it = Q.items[i], p = hangCua(it.id) || { ten: '?', ton: 0, donVi: '' }; tong += it.sl * it.gia;
-    var vuot = chuyen && it.sl > p.ton;
+    var vuot = chuyen && it.sl > p.ton + slCuQL(it.id);
     return '<div class="dong"><div class="tenH"><span>' + E(p.ten) + ' <small class="mo" style="font-weight:400">(' + E(p.donVi) + ' · tồn ' + tien(p.ton) + ')</small>' + (vuot ? ' <span class="nhan do">vượt tồn kho</span>' : '') + '</span><button onclick="Q.items.splice(' + i + ',1);veGioQL()" aria-label="Bỏ">×</button></div>' +
       '<div class="dk"><div class="sl"><button onclick="Q.items[' + i + '].sl=Math.max(1,Q.items[' + i + '].sl-1);veGioQL()">−</button><input inputmode="numeric" value="' + it.sl + '" onchange="Q.items[' + i + '].sl=Math.max(1,so(this.value));veGioQL()" aria-label="Số lượng"><button onclick="Q.items[' + i + '].sl++;veGioQL()">+</button></div>' +
       '<div class="gia"><input inputmode="numeric" placeholder="Giá" value="' + (it.gia ? tien(it.gia) : '') + '" oninput="dinhDang(this)" onchange="Q.items[' + i + '].gia=Math.max(0,so(this.value));Q.items[' + i + '].suaGia=1;veGioQL()" aria-label="Đơn giá"></div><div class="tt so">' + tien(it.sl * it.gia) + '</div></div></div>';
@@ -1058,19 +1059,24 @@ function luuQL(xn) {
   if (!Q.dtId) return bao('Chưa chọn cửa hàng.', true);
   if (L.hang) {
     if (!Q.items.length) return bao('Chưa chọn mặt hàng nào.', true);
-    if (!xn && Q.loai === 'CHUYEN_HANG' && Q.items.some(function (it) { var p = hangCua(it.id); return p && it.sl > p.ton; }))
+    if (!xn && Q.loai === 'CHUYEN_HANG' && Q.items.some(function (it) { var p = hangCua(it.id); return p && it.sl > p.ton + slCuQL(it.id); }))
       return hoi('Có mặt hàng chuyển đi nhiều hơn số tồn kho trên web. Vẫn lưu?', 'Vẫn lưu', function () { luuQL(1); });
     if (!xn && Q.items.some(function (it) { return !it.gia; })) return hoi('Có mặt hàng chưa có giá (sẽ tính 0 đồng). Vẫn lưu?', 'Vẫn lưu', function () { luuQL(1); });
+    if (!xn && Q.suaId && Q.loai === 'NHAN_HANG') {
+      var am = (Q.cu || []).filter(function (c) { var p = hangCua(c.id), m = Q.items.filter(function (x) { return x.id === c.id; })[0]; return p && p.ton - c.sl + (m ? m.sl : 0) < 0; });
+      if (am.length) return hoi('Sau khi sửa, tồn kho của ' + am.map(function (c) { return hangCua(c.id).ten; }).join(', ') + ' sẽ bị âm (hàng đã bán bớt). Vẫn lưu?', 'Vẫn lưu', function () { luuQL(1); });
+    }
     d.items = Q.items.map(function (x) { return { id: x.id, sl: x.sl, gia: x.gia }; });
   } else {
     d.soTien = so($('#qlTien').value);
     if (d.soTien <= 0) return bao('Nhập số tiền.', true);
   }
   Q._ma = Q._ma || maMoi(); d._ma = Q._ma;
+  var sua = Q.suaId; if (sua) d.suaId = sua;
   goi('luuQuaLai', d).then(function (r) {
-    capNhat(r); Q.items = []; Q._ma = null; Q.dem = 0;
-    bao('Đã lưu phiếu ' + L.ten.toLowerCase() + ' #' + r.moiId + '.');
-    veFormQL(); hienSoQL(r);
+    capNhat(r); Q = { dtId: Q.dtId, loai: Q.loai, items: [], dem: 0 };
+    bao((sua ? 'Đã sửa phiếu ' : 'Đã lưu phiếu ') + L.ten.toLowerCase() + ' #' + r.moiId + '.');
+    if (sua) veQL(); else { veFormQL(); hienSoQL(r); }
     var i = (S.tam.ql || []).findIndex(function (x) { return x.kieu === 'QL' && x.id === r.moiId; });
     if (i >= 0) xemQL(i);
   }).catch(loi);
@@ -1082,7 +1088,7 @@ function hienSoQL(r) {
   $('#soQL').innerHTML = r.ds.map(function (x, i) {
     var L = QL_LOAI[x.loai] || { ten: x.loai, nhan: '' }, huy = x.trangThai !== 'OK';
     return '<li onclick="xemQL(' + i + ')"><div class="c1"><div><span class="nhan ' + L.nhan + '">' + L.ten + ' #' + x.id + '</span>' + (huy ? ' <span class="nhan xam">đã huỷ</span>' : '') + (x.ghiChu ? ' ' + E(x.ghiChu) : '') + '</div>' +
-      '<div class="nho mo">' + ngayGio(x.thoiGian) + ' · ' + E(x.nhanVien) + (x.chiTiet ? ' · ' + E(x.chiTiet.length > 60 ? x.chiTiet.slice(0, 60) + '…' : x.chiTiet) : '') + '</div></div>' +
+      '<div class="nho mo">' + ngayGio(x.thoiGian) + ' · ' + E(x.nhanVien) + (x.suaLuc ? ' · đã sửa' : '') + (x.chiTiet ? ' · ' + E(x.chiTiet.length > 60 ? x.chiTiet.slice(0, 60) + '…' : x.chiTiet) : '') + '</div></div>' +
       '<div class="phai so"><div class="dam"' + (huy ? ' style="text-decoration:line-through"' : '') + '>' + tien(x.tong) + '</div>' + (huy ? '' : '<div class="nho mo">sau: ' + soDuNgan(x.soDuSau) + '</div>') + '</div></li>';
   }).join('') || '<li class="tinh mo">Chưa có phiếu nào với cửa hàng này.</li>';
 }
@@ -1096,7 +1102,19 @@ function xemQL(i) {
   else cuoi.push(['Trạng thái :', 'ĐÃ HUỶ']);
   var p = { tieuDe: L.td, thoiGian: x.thoiGian, nhanKH: 'Cửa hàng:', khTen: dt.ten, khSdt: dt.sdt, khDiaChi: x.ghiChu ? 'Ghi chú: ' + x.ghiChu : dt.diaChi,
     items: L.hang ? x.items : null, tong: x.tong, dongCuoi: cuoi };
-  xemPhieu(p, 0, ok && x.kieu === 'QL' ? '<button class="nut do" onclick="huyQL(' + i + ')">Huỷ phiếu</button>' : '');
+  xemPhieu(p, 0, ok && x.kieu === 'QL' ? '<button class="nut do" onclick="huyQL(' + i + ')">Huỷ phiếu</button><button class="nut chinh" onclick="suaQL(' + i + ')">Sửa phiếu</button>' : '');
+}
+function nutLuuQL(L) { return Q.suaId ? 'Lưu thay đổi phiếu #' + Q.suaId : 'Lưu phiếu ' + L.ten.toLowerCase(); }
+function slCuQL(id) { var c = (Q.cu || []).filter(function (x) { return x.id === id; })[0]; return c && Q.loai === 'CHUYEN_HANG' ? c.sl : 0; }
+function suaQL(i) {
+  var x = S.tam.ql[i], L = QL_LOAI[x.loai];
+  var it = (x.items || []).filter(function (y) { return hangCua(y.id); });
+  if (L.hang && it.length < x.items.length) bao('Có mặt hàng trong phiếu đã bị xoá khỏi danh sách hàng, sẽ bị bỏ ra khi lưu.', true);
+  Q = { dtId: Q.dtId, loai: x.loai, suaId: x.id, ghiChu: x.ghiChu, soTien: L.hang ? 0 : x.tong, dem: it.length,
+    items: it.map(function (y, k) { return { id: y.id, sl: y.sl, gia: y.gia, suaGia: 1, t: k + 1 }; }), cu: (x.items || []).map(function (y) { return { id: y.id, sl: y.sl }; }) };
+  dongHop(); veQL(); window.scrollTo(0, 0);
+}
+function boSuaQL() { Q = { dtId: Q.dtId, loai: Q.loai, items: [], dem: 0 }; veQL();
 }
 function huyQL(i) {
   var x = S.tam.ql[i], L = QL_LOAI[x.loai];
