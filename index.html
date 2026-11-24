@@ -1215,7 +1215,7 @@ function luuKK(xn) {
 /* ====================== BÁO CÁO ====================== */
 function veBC() {
   chinh('<div class="tieuDeTrang"><h2>Báo cáo</h2></div>' + khoangHTML('taiBC') + '<div id="ndBC"><p class="mo">Đang tải…</p></div>');
-  $('#kgChon').value = 'tn'; doiKhoang(); taiBC();
+  $('#kgChon').value = 'hn'; doiKhoang(); taiBC();
 }
 function taiBC() {
   goi('baoCao', khoang()).then(function (r) {
