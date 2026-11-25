@@ -1137,7 +1137,7 @@ function xuatQL() {
 }
 
 /* ====================== CHI PHÍ CỬA HÀNG ====================== */
-var LOAI_CP = ['Lương nhân viên', 'Thuê mặt bằng', 'Điện nước', 'Xăng xe – vận chuyển', 'Ăn uống – tiếp khách', 'Sửa chữa – mua sắm', 'Khác'];
+var LOAI_CP = ['Lương nhân viên', 'Thuê mặt bằng', 'Điện nước', 'Xăng xe', 'Vận chuyển', 'Ăn uống – tiếp khách', 'Sửa chữa – mua sắm', 'Khác'];
 function veCP() {
   chinh('<div class="tieuDeTrang"><h2>Chi phí cửa hàng</h2><button class="nut chinh" onclick="hopCP(0)">+ Thêm chi phí</button></div>' + khoangHTML('taiCP') + '<div id="ndCP"><p class="mo">Đang tải…</p></div>');
   $('#kgChon').value = 'tn'; doiKhoang(); taiCP();
